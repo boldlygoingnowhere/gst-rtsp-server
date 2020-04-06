@@ -195,7 +195,7 @@ GList *                gst_rtsp_client_session_filter    (GstRTSPClient *client,
                                                           GstRTSPClientSessionFilterFunc func,
                                                           gpointer user_data);
 
-
+void gst_rtsp_client_set_watch_limit_bytes (gsize bytes);
 
 G_END_DECLS
 
