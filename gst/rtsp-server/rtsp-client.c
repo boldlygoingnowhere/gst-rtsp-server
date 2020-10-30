@@ -101,7 +101,7 @@ static GHashTable *tunnels;     /* protected by tunnels_lock */
 /* FIXME make this configurable. We don't want to do this yet because it will
  * be superceeded by a cache object later */
 #define WATCH_BACKLOG_SIZE              100
-#define WATCH_BACKLOG_BYTES             10000000
+#define WATCH_BACKLOG_BYTES             5000000
 
 #define ADD_WATCH_LIMIT(watch)          gst_rtsp_watch_set_send_backlog (watch, WATCH_BACKLOG_BYTES, 0)
 #define REMOVE_WATCH_LIMIT(watch)       gst_rtsp_watch_set_send_backlog (watch, 0, 0)
