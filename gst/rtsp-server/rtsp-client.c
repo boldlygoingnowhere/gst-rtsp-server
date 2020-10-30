@@ -181,6 +181,53 @@ static gboolean pre_signal_accumulator (GSignalInvocationHint * ihint,
 
 G_DEFINE_TYPE (GstRTSPClient, gst_rtsp_client, G_TYPE_OBJECT);
 
+//For Ovation Server, we need to support a URI with a prefix like:
+// /abip-1234/rtsp/live1
+//This should be stored in a file (see ini_file below) like the following:
+//#This file was created by av_mgr
+//
+//[General]
+//
+//OptionalUriPrefix=/abip-1234
+static const gchar *
+get_optional_uri_prefix (void)
+{
+  const gchar *ini_file = "/tmp/gst-rtsp-server.ini";
+  static const gchar *optional_uri_prefix;
+
+  if (optional_uri_prefix == NULL) {
+    const gchar *prefix = "";
+    g_autoptr (GError) error = NULL;
+    g_autoptr (GKeyFile) key_file = g_key_file_new ();
+    gchar *val;
+
+    if (!g_key_file_load_from_file (key_file, ini_file, G_KEY_FILE_NONE,
+            &error)) {
+      if (g_error_matches (error, G_FILE_ERROR, G_FILE_ERROR_NOENT))
+        GST_WARNING ("Could not find ini file: %s", ini_file);
+      else
+        GST_ERROR ("Error loading ini file: %s (error: %s)", ini_file,
+            error->message);
+    }
+
+    val =
+        g_key_file_get_string (key_file, "General", "OptionalUriPrefix",
+        &error);
+    if (val == NULL) {
+      GST_ERROR ("Could not find OptionalUriPrefix in ini file: %s", ini_file);
+    } else {
+      //Add trailing slash
+      prefix = g_strdup_printf ("%s/", val);
+      g_free (val);
+    }
+
+    optional_uri_prefix = prefix;
+    GST_WARNING ("optional_uri_prefix = %s", prefix);
+  }
+
+  return optional_uri_prefix;
+}
+
 static void
 gst_rtsp_client_class_init (GstRTSPClientClass * klass)
 {
@@ -3089,6 +3136,9 @@ sanitize_uri (GstRTSPUrl * uri)
   gint i, len;
   gchar *s, *d;
   gboolean have_slash, prev_slash;
+  const gchar *optional_uri_prefix = get_optional_uri_prefix ();
+  size_t optional_uri_prefix_len =
+      optional_uri_prefix ? strlen (optional_uri_prefix) : 0;
 
   s = d = uri->abspath;
   len = strlen (uri->abspath);
@@ -3103,10 +3153,28 @@ sanitize_uri (GstRTSPUrl * uri)
     prev_slash = have_slash;
   }
   len = d - uri->abspath;
-  /* don't remove the first slash if that's the only thing left */
-  if (len > 1 && *(d - 1) == '/')
+  /* don't remove the trailing slash if that's the only thing left */
+  if (len > 1 && *(d - 1) == '/') {
     d--;
+    len--;
+  }
   *d = '\0';
+
+  //Look for the optional prefix and simply remove it from the URI
+  if (optional_uri_prefix_len > 1 && optional_uri_prefix_len <= len
+      && !strncmp (uri->abspath, optional_uri_prefix,
+          optional_uri_prefix_len)) {
+    //optional_uri_prefix contains trailing slash so do not include this in removal
+    gint uri_chars_to_remove =
+        optional_uri_prefix[optional_uri_prefix_len - 1] ==
+        '/' ? optional_uri_prefix_len - 1 : optional_uri_prefix_len;
+    GST_WARNING ("Removing prefix %.*s from URI %s", uri_chars_to_remove,
+        optional_uri_prefix, uri->abspath);
+    memmove (uri->abspath, uri->abspath + uri_chars_to_remove,
+        len - uri_chars_to_remove);
+    uri->abspath[len - uri_chars_to_remove] = '\0';
+    GST_WARNING ("URI is now %s", uri->abspath);
+  }
 }
 
 /* is called when the session is removed from its session pool. */
