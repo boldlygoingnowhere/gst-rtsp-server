@@ -97,13 +97,17 @@ struct _GstRTSPClientPrivate
 
 static GMutex tunnels_lock;
 static GHashTable *tunnels;     /* protected by tunnels_lock */
+static gsize watch_limit_bytes;
 
 /* FIXME make this configurable. We don't want to do this yet because it will
  * be superceeded by a cache object later */
 #define WATCH_BACKLOG_SIZE              100
-#define WATCH_BACKLOG_BYTES             5000000
 
-#define ADD_WATCH_LIMIT(watch)          gst_rtsp_watch_set_send_backlog (watch, WATCH_BACKLOG_BYTES, 0)
+#define ADD_WATCH_LIMIT(watch)          { if (watch_limit_bytes == 0) \
+                                            gst_rtsp_watch_set_send_backlog (watch, 0, WATCH_BACKLOG_SIZE); \
+                                          else \
+                                            gst_rtsp_watch_set_send_backlog (watch, watch_limit_bytes, 0); \
+                                        }
 #define REMOVE_WATCH_LIMIT(watch)       gst_rtsp_watch_set_send_backlog (watch, 0, 0)
 
 #define DEFAULT_SESSION_POOL            NULL
@@ -4534,4 +4538,10 @@ restart:
     g_hash_table_unref (visited);
 
   return result;
+}
+
+void
+gst_rtsp_client_set_watch_limit_bytes (gsize bytes)
+{
+  watch_limit_bytes = bytes;
 }
