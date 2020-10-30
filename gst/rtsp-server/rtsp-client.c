@@ -101,6 +101,10 @@ static GHashTable *tunnels;     /* protected by tunnels_lock */
 /* FIXME make this configurable. We don't want to do this yet because it will
  * be superceeded by a cache object later */
 #define WATCH_BACKLOG_SIZE              100
+#define WATCH_BACKLOG_BYTES             10000000
+
+#define ADD_WATCH_LIMIT(watch)          gst_rtsp_watch_set_send_backlog (watch, WATCH_BACKLOG_BYTES, 0)
+#define REMOVE_WATCH_LIMIT(watch)       gst_rtsp_watch_set_send_backlog (watch, 0, 0)
 
 #define DEFAULT_SESSION_POOL            NULL
 #define DEFAULT_MOUNT_POINTS            NULL
@@ -1624,6 +1628,21 @@ handle_play_request (GstRTSPClient * client, GstRTSPContext * ctx)
     gst_rtsp_message_take_header (ctx->response, GST_RTSP_HDR_RANGE, str);
 
   send_message (client, ctx, ctx->response, FALSE);
+
+  if (client->priv->watch) {
+    gchar uri_suffix = '\0';
+    gint uri_len = 0;
+
+    if (ctx->uri->abspath)
+      uri_len = strlen (ctx->uri->abspath);
+
+    if (uri_len > 0)
+      uri_suffix = ctx->uri->abspath[uri_len - 1];
+
+    GST_WARNING ("uri_suffix=%c",
+        uri_suffix == '\0' ? (int) '?' : (int) uri_suffix);
+    gst_rtsp_watch_set_uri_suffix (client->priv->watch, uri_suffix);
+  }
 
   /* start playing after sending the response */
   gst_rtsp_session_media_set_state (sessmedia, GST_STATE_PLAYING);
@@ -3188,10 +3207,10 @@ client_session_removed (GstRTSPSessionPool * pool, GstRTSPSession * session,
 
   g_mutex_lock (&priv->lock);
   if (priv->watch != NULL)
-    gst_rtsp_watch_set_send_backlog (priv->watch, 0, 0);
+    REMOVE_WATCH_LIMIT (priv->watch);
   client_unwatch_session (client, session, NULL);
   if (priv->watch != NULL)
-    gst_rtsp_watch_set_send_backlog (priv->watch, 0, WATCH_BACKLOG_SIZE);
+    ADD_WATCH_LIMIT (priv->watch);
   g_mutex_unlock (&priv->lock);
 }
 
@@ -3397,7 +3416,7 @@ handle_request (GstRTSPClient * client, GstRTSPMessage * request)
    * upper boundary on its size.
    */
   if (priv->watch != NULL)
-    gst_rtsp_watch_set_send_backlog (priv->watch, 0, 0);
+    REMOVE_WATCH_LIMIT (priv->watch);
 
   /* now see what is asked and dispatch to a dedicated handler */
   switch (method) {
@@ -3433,17 +3452,17 @@ handle_request (GstRTSPClient * client, GstRTSPMessage * request)
       break;
     case GST_RTSP_REDIRECT:
       if (priv->watch != NULL)
-        gst_rtsp_watch_set_send_backlog (priv->watch, 0, WATCH_BACKLOG_SIZE);
+        ADD_WATCH_LIMIT (priv->watch);
       goto not_implemented;
     case GST_RTSP_INVALID:
     default:
       if (priv->watch != NULL)
-        gst_rtsp_watch_set_send_backlog (priv->watch, 0, WATCH_BACKLOG_SIZE);
+        ADD_WATCH_LIMIT (priv->watch);
       goto bad_request;
   }
 
   if (priv->watch != NULL)
-    gst_rtsp_watch_set_send_backlog (priv->watch, 0, WATCH_BACKLOG_SIZE);
+    ADD_WATCH_LIMIT (priv->watch);
 
 done:
   if (ctx == &sctx)
@@ -4401,7 +4420,7 @@ gst_rtsp_client_attach (GstRTSPClient * client, GMainContext * context)
   gst_rtsp_client_set_send_func (client, do_send_message, priv->watch,
       (GDestroyNotify) gst_rtsp_watch_unref);
 
-  gst_rtsp_watch_set_send_backlog (priv->watch, 0, WATCH_BACKLOG_SIZE);
+  ADD_WATCH_LIMIT (priv->watch);
 
   GST_INFO ("client %p: attaching to context %p", client, context);
   res = gst_rtsp_watch_attach (priv->watch, context);
