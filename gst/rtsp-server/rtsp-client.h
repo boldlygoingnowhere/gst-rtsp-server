@@ -284,6 +284,15 @@ GST_RTSP_SERVER_API
 GstRTSPStreamTransport * gst_rtsp_client_get_stream_transport (GstRTSPClient *client,
                                                                guint8 channel);
 
+GST_RTSP_SERVER_API
+GSocket * gst_rtsp_client_get_write_socket (GstRTSPClient *client);
+
+GST_RTSP_SERVER_API
+gboolean gst_rtsp_client_is_using_ovation_server (GstRTSPClient *client);
+
+GST_RTSP_SERVER_API
+void gst_rtsp_client_get_watch_curr_backlog (GstRTSPClient *client,
+                                             gsize *bytes, guint *messages);
 
 #ifdef G_DEFINE_AUTOPTR_CLEANUP_FUNC
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GstRTSPClient, gst_object_unref)

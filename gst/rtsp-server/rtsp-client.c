@@ -115,6 +115,10 @@ struct _GstRTSPClientPrivate
 
   GHashTable *pipelined_requests;       /* pipelined_request_id -> session_id */
   GstRTSPTunnelState tstate;
+
+  /* ovation adaptive streaming flag */
+  gboolean ovation_server_check_done;
+  gboolean using_ovation_server;
 };
 
 typedef struct
@@ -3830,7 +3834,7 @@ sig_failed:
 
 /* remove duplicate and trailing '/' */
 static void
-sanitize_uri (GstRTSPUrl * uri)
+sanitize_uri (GstRTSPUrl * uri, gboolean *using_ovation_server)
 {
   gint i, len;
   gchar *s, *d;
@@ -3873,6 +3877,12 @@ sanitize_uri (GstRTSPUrl * uri)
         len - uri_chars_to_remove);
     uri->abspath[len - uri_chars_to_remove] = '\0';
     GST_WARNING ("URI is now %s", uri->abspath);
+
+    if (using_ovation_server)
+      *using_ovation_server = TRUE;
+  } else {
+    if (using_ovation_server)
+      *using_ovation_server = FALSE;
   }
 }
 
@@ -4088,8 +4098,10 @@ handle_request (GstRTSPClient * client, GstRTSPMessage * request)
   }
 
   /* sanitize the uri */
-  if (uri)
-    sanitize_uri (uri);
+  if (uri) {
+    sanitize_uri (uri, priv->ovation_server_check_done ? NULL : &priv->using_ovation_server);
+    priv->ovation_server_check_done = TRUE;
+  }
   ctx->uri = uri;
   ctx->session = session;
 
@@ -4908,6 +4920,27 @@ gst_rtsp_client_get_stream_transport (GstRTSPClient * self, guint8 channel)
 {
   return g_hash_table_lookup (self->priv->transports,
       GINT_TO_POINTER ((gint) channel));
+}
+
+GSocket *
+gst_rtsp_client_get_write_socket (GstRTSPClient *client)
+{
+  return gst_rtsp_connection_get_write_socket (client->priv->connection);
+}
+
+gboolean
+gst_rtsp_client_is_using_ovation_server (GstRTSPClient *client)
+{
+  return client->priv->using_ovation_server;
+}
+
+void gst_rtsp_client_get_watch_curr_backlog (GstRTSPClient *client,
+                                             gsize *bytes, guint *messages)
+{
+  GstRTSPClientPrivate *priv = client->priv;
+  g_mutex_lock (&priv->watch_lock);
+  gst_rtsp_watch_get_curr_backlog (priv->watch, bytes, messages);
+  g_mutex_unlock (&priv->watch_lock);
 }
 
 static gboolean
