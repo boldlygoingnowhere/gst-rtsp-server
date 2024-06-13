@@ -3492,9 +3492,10 @@ create_sender_part (GstRTSPStream * stream, const GstRTSPTransport * transport)
   priv = stream->priv;
   bin = priv->joined_bin;
 
-  is_tcp = transport->lower_transport == GST_RTSP_LOWER_TRANS_TCP;
-  is_udp = transport->lower_transport == GST_RTSP_LOWER_TRANS_UDP;
-  is_mcast = transport->lower_transport == GST_RTSP_LOWER_TRANS_UDP_MCAST;
+  is_tcp = TRUE; //priv->protocols & GST_RTSP_LOWER_TRANS_TCP;
+  is_udp = FALSE; //((priv->protocols & GST_RTSP_LOWER_TRANS_UDP) ||
+      //(priv->protocols & GST_RTSP_LOWER_TRANS_UDP_MCAST));
+  is_mcast = FALSE;
 
   if (is_mcast)
     mcast_ttl = transport->ttl;
@@ -3585,13 +3586,14 @@ create_sender_part (GstRTSPStream * stream, const GstRTSPTransport * transport)
 
       gst_app_sink_set_callbacks (GST_APP_SINK_CAST (priv->appsink[i]),
           &sink_cb, stream, NULL);
-      plug_sink (stream, transport, i);
+      //plug_sink (stream, transport, i);
     }
 
     if (link_tee) {
       /* and link to rtpbin send pad */
-      gst_element_sync_state_with_parent (priv->tee[i]);
-      pad = gst_element_get_static_pad (priv->tee[i], "sink");
+      gst_element_sync_state_with_parent (priv->appsink[i]);
+      gst_bin_add (bin, priv->appsink[i]);
+      pad = gst_element_get_static_pad (priv->appsink[i], "sink");
       gst_pad_link (priv->send_src[i], pad);
       gst_object_unref (pad);
     }
@@ -3977,6 +3979,9 @@ gst_rtsp_stream_join_bin (GstRTSPStream * stream, GstBin * bin,
   }
 
   priv->joined_bin = bin;
+
+  create_sender_part (stream, NULL);
+
   GST_DEBUG_OBJECT (stream, "successfully joined bin");
   g_mutex_unlock (&priv->lock);
 
@@ -5688,8 +5693,8 @@ gst_rtsp_stream_complete_stream (GstRTSPStream * stream,
     goto create_receiver_error;
 
   /* in the RECORD case, we only add RTCP sender part */
-  if (!create_sender_part (stream, transport))
-    goto create_sender_error;
+  //if (!create_sender_part (stream, transport))
+   // goto create_sender_error;
 
   priv->configured_protocols |= transport->lower_transport;
 
