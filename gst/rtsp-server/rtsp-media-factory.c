@@ -78,6 +78,8 @@ struct _GstRTSPMediaFactoryPrivate
   GstClock *clock;
 
   GstRTSPPublishClockMode publish_clock_mode;
+
+  GstClockTime range_clock_offset;   /* clock values used in RTSP messages have this offset in nanoseconds */
 };
 
 #define DEFAULT_LAUNCH          NULL
@@ -1399,6 +1401,8 @@ gst_rtsp_media_factory_construct (GstRTSPMediaFactory * factory,
       if (klass->configure)
         klass->configure (factory, media);
 
+      gst_rtsp_media_set_range_clock_offset(media, priv->range_clock_offset);
+
       g_signal_emit (factory,
           gst_rtsp_media_factory_signals[SIGNAL_MEDIA_CONFIGURE], 0, media,
           NULL);
@@ -1684,6 +1688,28 @@ gst_rtsp_media_factory_is_bind_mcast_address (GstRTSPMediaFactory * factory)
   GST_RTSP_MEDIA_FACTORY_UNLOCK (factory);
 
   return result;
+}
+
+/**
+ * gst_rtsp_media_factory_set_range_clock_offset:
+ * @factory: a #GstRTSPMediaFactory
+ * @offset: the new value in nanoseconds
+ *
+ * Configure the clock offset used in RTSP messages.
+ */
+void
+gst_rtsp_media_factory_set_range_clock_offset (GstRTSPMediaFactory * factory,
+      GstClockTime offset)
+{
+  GstRTSPMediaFactoryPrivate *priv;
+
+  g_return_if_fail (GST_IS_RTSP_MEDIA_FACTORY (factory));
+
+  priv = factory->priv;
+
+  GST_RTSP_MEDIA_FACTORY_LOCK (factory);
+  priv->range_clock_offset = offset;
+  GST_RTSP_MEDIA_FACTORY_UNLOCK (factory);
 }
 
 static gchar *

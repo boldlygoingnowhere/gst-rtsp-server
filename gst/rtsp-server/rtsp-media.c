@@ -148,6 +148,7 @@ struct _GstRTSPMediaPrivate
   GstRTSPTimeRange range;       /* protected by lock */
   GstClockTime range_start;
   GstClockTime range_stop;
+  GstClockTime range_clock_offset;   /* clock values used in RTSP messages have this offset in nanoseconds */
 
   GList *payloads;              /* protected by lock */
   GstClockTime rtx_time;        /* protected by lock */
@@ -1859,6 +1860,48 @@ gst_rtsp_media_get_publish_clock_mode (GstRTSPMedia * media)
 }
 
 /**
+ * gst_rtsp_media_set_range_clock_offset:
+ * @media: a #GstRTSPMedia
+ * @offset: the new value in nanoseconds
+ *
+ * Configure the clock offset used in RTSP messages.
+ */
+void
+gst_rtsp_media_set_range_clock_offset (GstRTSPMedia * media,
+      GstClockTime offset)
+{
+  GstRTSPMediaPrivate *priv;
+
+  priv = media->priv;
+  g_mutex_lock (&priv->lock);
+  priv->range_clock_offset = offset;
+  g_mutex_unlock (&priv->lock);
+}
+
+/**
+ * gst_rtsp_media_get_range_clock_offset:
+ * @media: a #GstRTSPMedia
+ * @offset: the new value in nanoseconds
+ *
+ * Gets the clock offset used in RTSP messages.
+ *
+ * Returns: The GstClockTime
+ */
+GstClockTime
+gst_rtsp_media_get_range_clock_offset (GstRTSPMedia * media)
+{
+  GstRTSPMediaPrivate *priv;
+  GstClockTime ret;
+
+  priv = media->priv;
+  g_mutex_lock (&priv->lock);
+  ret = priv->range_clock_offset;
+  g_mutex_unlock (&priv->lock);
+
+  return ret;
+}
+
+/**
  * gst_rtsp_media_set_address_pool:
  * @media: a #GstRTSPMedia
  * @pool: (transfer none) (nullable): a #GstRTSPAddressPool
@@ -2650,6 +2693,84 @@ gst_rtsp_media_get_range_string (GstRTSPMedia * media, gboolean play,
   }
   g_mutex_unlock (&priv->lock);
   g_rec_mutex_unlock (&priv->state_lock);
+
+  if (!klass->convert_range (media, &range, unit))
+    goto conversion_failed;
+
+  result = gst_rtsp_range_to_string (&range);
+
+  return result;
+
+  /* ERRORS */
+not_prepared:
+  {
+    GST_WARNING ("media %p was not prepared", media);
+    g_rec_mutex_unlock (&priv->state_lock);
+    return NULL;
+  }
+conversion_failed:
+  {
+    GST_WARNING ("range conversion to unit %d failed", unit);
+    return NULL;
+  }
+}
+
+/**
+ * gst_rtsp_media_get_range_string_with_clock_offset:
+ * @media: a #GstRTSPMedia
+ * @play: for the PLAY request
+ * @unit: the unit to use for the string
+ *
+ * Get the current range as a string applying the clock offset. @media must be prepared with
+ * gst_rtsp_media_prepare ().
+ *
+ * Returns: (transfer full) (nullable): The range as a string, g_free() after usage.
+ */
+gchar *
+gst_rtsp_media_get_range_string_with_clock_offset (GstRTSPMedia * media, gboolean play,
+    GstRTSPRangeUnit unit)
+{
+  GstRTSPMediaClass *klass;
+  GstRTSPMediaPrivate *priv;
+  gchar *result;
+  GstRTSPTimeRange range;
+
+  klass = GST_RTSP_MEDIA_GET_CLASS (media);
+  g_return_val_if_fail (GST_IS_RTSP_MEDIA (media), NULL);
+  g_return_val_if_fail (klass->convert_range != NULL, FALSE);
+
+  priv = media->priv;
+
+  g_rec_mutex_lock (&priv->state_lock);
+  if (priv->status != GST_RTSP_MEDIA_STATUS_PREPARED &&
+      priv->status != GST_RTSP_MEDIA_STATUS_SUSPENDED)
+    goto not_prepared;
+
+  /* Update the range value with current position/duration */
+  g_mutex_lock (&priv->lock);
+  collect_media_stats (media);
+
+  /* make copy */
+  range = priv->range;
+
+  if (!play && priv->n_active > 0) {
+    range.min.type = GST_RTSP_TIME_NOW;
+    range.min.seconds = -1;
+  }
+  g_mutex_unlock (&priv->lock);
+  g_rec_mutex_unlock (&priv->state_lock);
+
+  if (unit == GST_RTSP_RANGE_CLOCK && priv->range_clock_offset != 0) {
+    /* 
+      * range_clock_offset is in nano-secs in Epoch (UNIX) time.
+      * range_clock_sec_offset_since_1900 needs to be in NTP (seconds since 1900) as that is used by unit GST_RTSP_RANGE_CLOCK.
+      */
+    if (range.min.type == GST_RTSP_TIME_SECONDS)
+      range.min.seconds += (gdouble)priv->range_clock_offset / GST_SECOND + G_GUINT64_CONSTANT (2208988800);
+
+    if (range.max.type == GST_RTSP_TIME_SECONDS)
+      range.max.seconds += (gdouble)priv->range_clock_offset / GST_SECOND + G_GUINT64_CONSTANT (2208988800);
+  }
 
   if (!klass->convert_range (media, &range, unit))
     goto conversion_failed;

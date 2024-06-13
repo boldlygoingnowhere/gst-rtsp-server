@@ -1975,7 +1975,7 @@ bad_speed_value:
 }
 
 static GstRTSPStatusCode
-setup_play_mode (GstRTSPClient * client, GstRTSPContext * ctx,
+setup_play_mode (GstRTSPMedia *media, GstRTSPClient * client, GstRTSPContext * ctx,
     GstRTSPRangeUnit * unit, gboolean * scale_present, gboolean * speed_present)
 {
   gchar *str;
@@ -1997,6 +1997,48 @@ setup_play_mode (GstRTSPClient * client, GstRTSPContext * ctx,
     if (res != GST_RTSP_OK)
       goto parse_range_failed;
 
+    if (range->unit == GST_RTSP_RANGE_CLOCK) {
+      /* Adjust the clock range to subtract range_clock_offset */
+
+      GstRTSPTimeRange range_adj = *range;
+
+      GstClockTime range_clock_offset = gst_rtsp_media_get_range_clock_offset (media);
+      /* 
+        * range_clock_offset is in nano-secs in Epoch (UNIX) time.
+        * range_clock_sec_offset_since_1900 needs to be in NTP (seconds since 1900) as that is used by unit GST_RTSP_RANGE_CLOCK.
+        */
+      gdouble range_clock_sec_offset_since_1900 = (gdouble)range_clock_offset / GST_SECOND + G_GUINT64_CONSTANT (2208988800);
+
+      /* gst_rtsp_range_convert_units() will fail if end is not set */
+      if (range->max.type == GST_RTSP_TIME_END)
+      {
+        range_adj.max.type = GST_RTSP_TIME_SECONDS;
+        range_adj.max.seconds = 0.0;
+      }
+
+      gst_rtsp_range_convert_units (&range_adj, GST_RTSP_RANGE_NPT);
+
+      range_adj.min.seconds = (range_adj.min.seconds > range_clock_sec_offset_since_1900) ? range_adj.min.seconds - range_clock_sec_offset_since_1900 : 0;
+
+      if (range->max.type != GST_RTSP_TIME_END)
+        range_adj.max.seconds = (range_adj.max.seconds > range_clock_sec_offset_since_1900) ? range_adj.max.seconds - range_clock_sec_offset_since_1900 : 0;
+
+      gst_rtsp_range_convert_units (&range_adj, GST_RTSP_RANGE_CLOCK);
+
+      if (range->max.type == GST_RTSP_TIME_END)
+      {
+        range_adj.max = range->max;
+        range_adj.max2 = range->max2;
+      }
+
+#if 0
+      GST_WARNING ("Seek before: from %d, %d-%d-%d, %f", range->min.type, range->min2.year, range->min2.month, range->min2.day, range->min.seconds);
+      GST_WARNING ("Seek: range_clock_offset=%llu, range_clock_sec_offset_since_1900=%f", (unsigned long long)range_clock_offset, range_clock_sec_offset_since_1900);
+      GST_WARNING ("Seek now: from %d, %d-%d-%d, %f", range_adj.min.type, range_adj.min2.year, range_adj.min2.month, range_adj.min2.day, range_adj.min.seconds);
+#endif
+
+      *range = range_adj;
+    }
     *unit = range->unit;
 
     /* parse seek style header, if present */
@@ -2159,7 +2201,7 @@ handle_play_request (GstRTSPClient * client, GstRTSPContext * ctx)
   if (!gst_rtsp_media_unsuspend (media))
     goto unsuspend_failed;
 
-  code = setup_play_mode (client, ctx, &unit, &scale_present, &speed_present);
+  code = setup_play_mode (media, client, ctx, &unit, &scale_present, &speed_present);
   if (code != GST_RTSP_STS_OK)
     goto invalid_mode;
 
@@ -2179,7 +2221,7 @@ handle_play_request (GstRTSPClient * client, GstRTSPContext * ctx)
         rtpinfo);
 
   /* add the range */
-  str = gst_rtsp_media_get_range_string (media, TRUE, unit);
+  str = gst_rtsp_media_get_range_string_with_clock_offset (media, TRUE, unit);
   if (str)
     gst_rtsp_message_take_header (ctx->response, GST_RTSP_HDR_RANGE, str);
 
@@ -4110,7 +4152,10 @@ handle_request (GstRTSPClient * client, GstRTSPMessage * request)
 
   /* handle any 'Require' headers */
   if (!check_request_requirements (ctx, &unsupported_reqs))
-    goto unsupported_requirement;
+  {
+    if (g_strcmp0 (unsupported_reqs, "onvif-replay") != 0)
+      goto unsupported_requirement;
+  }
 
   /* now see what is asked and dispatch to a dedicated handler */
   switch (method) {
