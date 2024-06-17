@@ -2086,6 +2086,12 @@ setup_play_mode (GstRTSPMedia *media, GstRTSPClient * client, GstRTSPContext * c
         &trickmode_interval, &enable_rate_control);
     if (rtsp_status_code != GST_RTSP_STS_OK)
       goto adjust_play_mode_failed;
+  } else if (gst_rtsp_message_get_header (ctx->request, GST_RTSP_HDR_RATE_CONTROL,
+                &str, 0) == GST_RTSP_OK) {
+    if (!g_strcmp0 (str, "no")) {
+      GST_WARNING ("Removing rate control");
+      enable_rate_control = FALSE;
+    }
   }
 
   gst_rtsp_media_set_rate_control (ctx->media, enable_rate_control);
