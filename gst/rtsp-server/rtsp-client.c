@@ -2088,8 +2088,11 @@ setup_play_mode (GstRTSPMedia *media, GstRTSPClient * client, GstRTSPContext * c
       goto adjust_play_mode_failed;
   } else if (gst_rtsp_message_get_header (ctx->request, GST_RTSP_HDR_RATE_CONTROL,
                 &str, 0) == GST_RTSP_OK) {
+    //Milestone sets the RTSP PLAY command field Rate-Control to no when retrieving recordings
+    //  indicating that it wants the recording to be delivered as fast as possible
+    //  so we disable rate control in this case
     if (!g_strcmp0 (str, "no")) {
-      GST_WARNING ("Removing rate control");
+      GST_WARNING ("Disabling rate control");
       enable_rate_control = FALSE;
     }
   }
