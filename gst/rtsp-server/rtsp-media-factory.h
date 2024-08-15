@@ -256,6 +256,9 @@ GST_RTSP_SERVER_API
 void                  gst_rtsp_media_factory_set_range_clock_offset (GstRTSPMediaFactory * factory, GstClockTime offset);
 
 GST_RTSP_SERVER_API
+void                  gst_rtsp_media_factory_set_write_socket_callback (GstRTSPMediaFactory * factory, GstRTSPMediaWriteSocketCallback callback);
+
+GST_RTSP_SERVER_API
 void                  gst_rtsp_media_factory_set_dscp_qos (GstRTSPMediaFactory * factory,
                                                            gint dscp_qos);
 GST_RTSP_SERVER_API

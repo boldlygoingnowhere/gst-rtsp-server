@@ -80,6 +80,7 @@ struct _GstRTSPMediaFactoryPrivate
   GstRTSPPublishClockMode publish_clock_mode;
 
   GstClockTime range_clock_offset;   /* clock values used in RTSP messages have this offset in nanoseconds */
+  GstRTSPMediaWriteSocketCallback write_socket_callback;
 };
 
 #define DEFAULT_LAUNCH          NULL
@@ -1403,6 +1404,8 @@ gst_rtsp_media_factory_construct (GstRTSPMediaFactory * factory,
 
       gst_rtsp_media_set_range_clock_offset(media, priv->range_clock_offset);
 
+      gst_rtsp_media_set_write_socket_callback(media, priv->write_socket_callback);
+
       g_signal_emit (factory,
           gst_rtsp_media_factory_signals[SIGNAL_MEDIA_CONFIGURE], 0, media,
           NULL);
@@ -1709,6 +1712,21 @@ gst_rtsp_media_factory_set_range_clock_offset (GstRTSPMediaFactory * factory,
 
   GST_RTSP_MEDIA_FACTORY_LOCK (factory);
   priv->range_clock_offset = offset;
+  GST_RTSP_MEDIA_FACTORY_UNLOCK (factory);
+}
+
+void
+gst_rtsp_media_factory_set_write_socket_callback (GstRTSPMediaFactory * factory,
+      GstRTSPMediaWriteSocketCallback callback)
+{
+  GstRTSPMediaFactoryPrivate *priv;
+
+  g_return_if_fail (GST_IS_RTSP_MEDIA_FACTORY (factory));
+
+  priv = factory->priv;
+
+  GST_RTSP_MEDIA_FACTORY_LOCK (factory);
+  priv->write_socket_callback = callback;
   GST_RTSP_MEDIA_FACTORY_UNLOCK (factory);
 }
 

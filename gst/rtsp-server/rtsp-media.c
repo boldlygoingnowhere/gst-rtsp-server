@@ -149,6 +149,7 @@ struct _GstRTSPMediaPrivate
   GstClockTime range_start;
   GstClockTime range_stop;
   GstClockTime range_clock_offset;   /* clock values used in RTSP messages have this offset in nanoseconds */
+  GstRTSPMediaWriteSocketCallback write_socket_callback;
 
   GList *payloads;              /* protected by lock */
   GstClockTime rtx_time;        /* protected by lock */
@@ -1896,6 +1897,32 @@ gst_rtsp_media_get_range_clock_offset (GstRTSPMedia * media)
   priv = media->priv;
   g_mutex_lock (&priv->lock);
   ret = priv->range_clock_offset;
+  g_mutex_unlock (&priv->lock);
+
+  return ret;
+}
+
+void
+gst_rtsp_media_set_write_socket_callback (GstRTSPMedia * media,
+      GstRTSPMediaWriteSocketCallback callback)
+{
+  GstRTSPMediaPrivate *priv;
+
+  priv = media->priv;
+  g_mutex_lock (&priv->lock);
+  priv->write_socket_callback = callback;
+  g_mutex_unlock (&priv->lock);
+}
+
+GstRTSPMediaWriteSocketCallback
+gst_rtsp_media_get_write_socket_callback (GstRTSPMedia * media)
+{
+  GstRTSPMediaPrivate *priv;
+  GstRTSPMediaWriteSocketCallback ret;
+
+  priv = media->priv;
+  g_mutex_lock (&priv->lock);
+  ret = priv->write_socket_callback;
   g_mutex_unlock (&priv->lock);
 
   return ret;

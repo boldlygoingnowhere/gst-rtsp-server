@@ -2144,6 +2144,7 @@ handle_play_request (GstRTSPClient * client, GstRTSPContext * ctx)
   GstRTSPClientClass *klass;
   GstRTSPSessionMedia *sessmedia;
   GstRTSPMedia *media;
+  GstRTSPMediaWriteSocketCallback write_socket_callback;
   GstRTSPStatusCode code;
   GstRTSPUrl *uri;
   gchar *str;
@@ -2205,6 +2206,15 @@ handle_play_request (GstRTSPClient * client, GstRTSPContext * ctx)
     goto pipeline_error;
   }
   g_ptr_array_unref (transports);
+
+  write_socket_callback = gst_rtsp_media_get_write_socket_callback (media);
+
+  if (write_socket_callback != NULL)
+  {
+    GstRTSPClientPrivate *priv = client->priv;
+    GSocket *write_socket = gst_rtsp_connection_get_write_socket (priv->connection);
+    write_socket_callback(write_socket, uri->abspath);
+  }
 
   /* in play we first unsuspend, media could be suspended from SDP or PAUSED */
   if (!gst_rtsp_media_unsuspend (media))

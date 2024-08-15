@@ -41,6 +41,7 @@ G_BEGIN_DECLS
 typedef struct _GstRTSPMedia GstRTSPMedia;
 typedef struct _GstRTSPMediaClass GstRTSPMediaClass;
 typedef struct _GstRTSPMediaPrivate GstRTSPMediaPrivate;
+typedef void (*GstRTSPMediaWriteSocketCallback)(GSocket *writeSocket, gchar *uriPath);
 
 /**
  * GstRTSPMediaStatus:
@@ -320,6 +321,12 @@ GST_RTSP_SERVER_API
 GstClockTime          gst_rtsp_media_get_range_clock_offset (GstRTSPMedia * media);
 
 GST_RTSP_SERVER_API
+void                  gst_rtsp_media_set_write_socket_callback (GstRTSPMedia * media, GstRTSPMediaWriteSocketCallback callback);
+
+GST_RTSP_SERVER_API
+GstRTSPMediaWriteSocketCallback gst_rtsp_media_get_write_socket_callback (GstRTSPMedia * media);
+
+GST_RTSP_SERVER_API
 gboolean                gst_rtsp_media_set_max_mcast_ttl  (GstRTSPMedia *media, guint ttl);
 
 GST_RTSP_SERVER_API
@@ -450,6 +457,12 @@ void                  gst_rtsp_media_set_rate_control (GstRTSPMedia * media, gbo
 
 GST_RTSP_SERVER_API
 gboolean              gst_rtsp_media_get_rate_control (GstRTSPMedia * media);
+
+GST_RTSP_SERVER_API
+GstElement *          gst_rtsp_media_get_pipeline (GstRTSPMedia * media);
+
+GST_RTSP_SERVER_API
+GstElement *          gst_rtsp_media_get_bin (GstRTSPMedia * media);
 
 #ifdef G_DEFINE_AUTOPTR_CLEANUP_FUNC
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GstRTSPMedia, gst_object_unref)
