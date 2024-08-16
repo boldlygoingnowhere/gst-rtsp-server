@@ -458,12 +458,6 @@ void                  gst_rtsp_media_set_rate_control (GstRTSPMedia * media, gbo
 GST_RTSP_SERVER_API
 gboolean              gst_rtsp_media_get_rate_control (GstRTSPMedia * media);
 
-GST_RTSP_SERVER_API
-GstElement *          gst_rtsp_media_get_pipeline (GstRTSPMedia * media);
-
-GST_RTSP_SERVER_API
-GstElement *          gst_rtsp_media_get_bin (GstRTSPMedia * media);
-
 #ifdef G_DEFINE_AUTOPTR_CLEANUP_FUNC
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GstRTSPMedia, gst_object_unref)
 #endif
