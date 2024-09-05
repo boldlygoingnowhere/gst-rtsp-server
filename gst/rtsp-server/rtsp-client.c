@@ -117,8 +117,9 @@ struct _GstRTSPClientPrivate
   GstRTSPTunnelState tstate;
 
   /* ovation adaptive streaming flag */
-  gboolean ovation_server_check_done;
+  gboolean uri_check_done;
   gboolean using_ovation_server;
+  gboolean using_live_stream;
 };
 
 typedef struct
@@ -3895,7 +3896,7 @@ sig_failed:
 
 /* remove duplicate and trailing '/' */
 static void
-sanitize_uri (GstRTSPUrl * uri, gboolean *using_ovation_server)
+sanitize_uri (GstRTSPUrl * uri, gboolean *using_ovation_server, gboolean *using_live_stream)
 {
   gint i, len;
   gchar *s, *d;
@@ -3944,6 +3945,10 @@ sanitize_uri (GstRTSPUrl * uri, gboolean *using_ovation_server)
   } else {
     if (using_ovation_server)
       *using_ovation_server = FALSE;
+  }
+
+  if (using_live_stream) {
+    *using_live_stream = strstr(uri->abspath, "rtsp/live") != NULL;
   }
 }
 
@@ -4160,8 +4165,8 @@ handle_request (GstRTSPClient * client, GstRTSPMessage * request)
 
   /* sanitize the uri */
   if (uri) {
-    sanitize_uri (uri, priv->ovation_server_check_done ? NULL : &priv->using_ovation_server);
-    priv->ovation_server_check_done = TRUE;
+    sanitize_uri (uri, priv->uri_check_done ? NULL : &priv->using_ovation_server, priv->uri_check_done ? NULL : &priv->using_live_stream);
+    priv->uri_check_done = TRUE;
   }
   ctx->uri = uri;
   ctx->session = session;
@@ -4996,6 +5001,12 @@ gboolean
 gst_rtsp_client_is_using_ovation_server (GstRTSPClient *client)
 {
   return client->priv->using_ovation_server;
+}
+
+gboolean
+gst_rtsp_client_is_using_live_stream (GstRTSPClient *client)
+{
+  return client->priv->using_live_stream;
 }
 
 void gst_rtsp_client_get_watch_curr_backlog (GstRTSPClient *client,

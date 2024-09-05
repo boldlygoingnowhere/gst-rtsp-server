@@ -291,6 +291,9 @@ GST_RTSP_SERVER_API
 gboolean gst_rtsp_client_is_using_ovation_server (GstRTSPClient *client);
 
 GST_RTSP_SERVER_API
+gboolean gst_rtsp_client_is_using_live_stream (GstRTSPClient *client);
+
+GST_RTSP_SERVER_API
 void gst_rtsp_client_get_watch_curr_backlog (GstRTSPClient *client,
                                              gsize *bytes, guint *messages);
 
