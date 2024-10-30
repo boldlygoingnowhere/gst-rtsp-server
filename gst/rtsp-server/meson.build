@@ -55,7 +55,8 @@ rtsp_server_headers = [
 
 install_headers(rtsp_server_headers, subdir : 'gstreamer-1.0/gst/rtsp-server')
 
-gst_rtsp_server_deps = [gstrtsp_dep, gstrtp_dep, gstsdp_dep, gstnet_dep, gstapp_dep]
+openssl_dep = dependency('openssl', version : '>=3.0.0')
+gst_rtsp_server_deps = [gstrtsp_dep, gstrtp_dep, gstsdp_dep, gstnet_dep, gstapp_dep, openssl_dep]
 gst_rtsp_server = library('gstrtspserver-@0@'.format(api_version),
   rtsp_server_sources,
   include_directories : rtspserver_incs,

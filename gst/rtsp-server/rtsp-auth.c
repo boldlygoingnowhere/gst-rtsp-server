@@ -51,6 +51,10 @@
 
 #include <string.h>
 
+#include <openssl/evp.h>
+#include <openssl/sha.h>
+#include <openssl/err.h>
+
 #include "rtsp-auth.h"
 
 struct _GstRTSPAuthPrivate
@@ -68,6 +72,7 @@ struct _GstRTSPAuthPrivate
   GstRTSPMethod methods;
   GstRTSPAuthMethod auth_methods;
   gchar *realm;
+  gboolean fips_enabled;
 };
 
 typedef struct
@@ -761,12 +766,143 @@ remove_nonce (gpointer data, GObject * object)
   g_free (remove_nonce_data);
 }
 
+static gchar *
+my_digest_to_string (guint8 *digest,
+                  gsize   digest_len)
+{
+  gint len = digest_len * 2;
+  gint i;
+  gchar *retval;
+  const gchar hex_digits[] = "0123456789abcdef";
+
+  retval = g_new (gchar, len + 1);
+
+  for (i = 0; i < digest_len; i++)
+    {
+      guint8 byte = digest[i];
+
+      retval[2 * i] = hex_digits[byte >> 4];
+      retval[2 * i + 1] = hex_digits[byte & 0xf];
+    }
+
+  retval[len] = 0;
+
+  return retval;
+}
+
+static gchar *
+generate_sha256_digest_auth_response (GstRTSPAuth * auth, 
+    const gchar * method, const gchar * realm, const gchar * username,
+    const gchar * password, const gchar * uri, const gchar * nonce)
+{
+  EVP_MD_CTX *ctx = NULL;
+  guint8 ha1[SHA256_DIGEST_LENGTH];
+  guint8 ha2[SHA256_DIGEST_LENGTH];
+  guint8 resp[SHA256_DIGEST_LENGTH];
+  gchar *ha1_str = NULL;
+  gchar *ha2_str = NULL;
+  gchar *resp_str = NULL;
+
+  ctx = EVP_MD_CTX_new();
+  if (!ctx)
+    goto evp_error;
+
+  if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1)
+    goto evp_error;
+
+  if (EVP_DigestUpdate(ctx, username, strlen(username)) != 1)
+    goto evp_error;
+
+  if (EVP_DigestUpdate(ctx, ":", 1) != 1)
+    goto evp_error;
+
+  if (EVP_DigestUpdate(ctx, realm, strlen(realm)) != 1)
+    goto evp_error;
+
+  if (EVP_DigestUpdate(ctx, ":", 1) != 1)
+    goto evp_error;
+
+  if (EVP_DigestUpdate(ctx, password, strlen(password)) != 1)
+    goto evp_error;
+
+  if (EVP_DigestFinal_ex(ctx, ha1, NULL) != 1)
+    goto evp_error;
+
+  ha1_str = my_digest_to_string(ha1, SHA256_DIGEST_LENGTH);
+
+  if (!ha1_str)
+    goto exit;
+
+  if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1)
+    goto evp_error;
+
+  if (EVP_DigestUpdate(ctx, method, strlen(method)) != 1)
+    goto evp_error;
+
+  if (EVP_DigestUpdate(ctx, ":", 1) != 1)
+    goto evp_error;
+
+  if (EVP_DigestUpdate(ctx, uri, strlen(uri)) != 1)
+    goto evp_error;
+
+  if (EVP_DigestFinal_ex(ctx, ha2, NULL) != 1)
+    goto evp_error;
+
+  ha2_str = my_digest_to_string(ha2, SHA256_DIGEST_LENGTH);
+
+  if (!ha2_str)
+    goto exit;
+
+  if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1)
+    goto evp_error;
+
+  if (EVP_DigestUpdate(ctx, ha1_str, strlen(ha1_str)) != 1)
+    goto evp_error;
+
+  if (EVP_DigestUpdate(ctx, ":", 1) != 1)
+    goto evp_error;
+
+  if (EVP_DigestUpdate(ctx, nonce, strlen(nonce)) != 1)
+    goto evp_error;
+
+  if (EVP_DigestUpdate(ctx, ":", 1) != 1)
+    goto evp_error;
+
+  if (EVP_DigestUpdate(ctx, ha2_str, strlen(ha2_str)) != 1)
+    goto evp_error;
+
+  if (EVP_DigestFinal_ex(ctx, resp, NULL) != 1)
+    goto evp_error;
+
+  resp_str = my_digest_to_string(resp, SHA256_DIGEST_LENGTH);
+
+  goto exit;
+
+evp_error:
+  GST_WARNING_OBJECT (auth, "Error, printing openssl errors to stderr");
+  fprintf(stderr, "%s error:\n", __FUNCTION__);
+  ERR_print_errors_fp(stderr);
+
+exit:
+  if (ha2_str)
+    g_free(ha2_str);
+
+  if (ha1_str)
+    g_free(ha1_str);
+
+  if (ctx)
+    EVP_MD_CTX_free(ctx);
+
+  return resp_str;
+}
+
 static gboolean
 default_digest_auth (GstRTSPAuth * auth, GstRTSPContext * ctx,
     GstRTSPAuthParam ** param)
 {
   const gchar *realm = NULL, *user = NULL, *nonce = NULL;
   const gchar *response = NULL, *uri = NULL;
+  const gchar *algorithm = NULL;
   GstRTSPDigestNonce *nonce_entry = NULL;
   GstRTSPDigestEntry *digest_entry;
   gchar *expected_response = NULL;
@@ -790,12 +926,19 @@ default_digest_auth (GstRTSPAuth * auth, GstRTSPContext * ctx,
       response = (*param)->value;
     else if (!uri && strcmp ((*param)->name, "uri") == 0 && (*param)->value)
       uri = (*param)->value;
+    else if (!algorithm && strcmp ((*param)->name, "algorithm") == 0 && (*param)->value)
+      algorithm = (*param)->value;
 
     param++;
   }
 
   if (!realm || !user || !nonce || !response || !uri)
     return FALSE;
+
+  if (auth->priv->fips_enabled && (!algorithm || g_ascii_strcasecmp (algorithm, "SHA-256") != 0)) {
+    GST_WARNING_OBJECT (auth, "FIPS enabled but algorithm=<%s>", algorithm ? algorithm : "null");
+    return FALSE;
+  }
 
   g_mutex_lock (&auth->priv->lock);
   digest_entry = g_hash_table_lookup (auth->priv->digest, user);
@@ -810,15 +953,27 @@ default_digest_auth (GstRTSPAuth * auth, GstRTSPContext * ctx,
   if (nonce_entry->client && nonce_entry->client != ctx->client)
     goto out;
 
-  if (digest_entry->md5_pass) {
-    expected_response = gst_rtsp_generate_digest_auth_response_from_md5 (NULL,
-        gst_rtsp_method_as_text (ctx->method), digest_entry->md5_pass,
-        uri, nonce);
-  } else {
+  if (auth->priv->fips_enabled) {
+    if (digest_entry->md5_pass) {
+      GST_WARNING_OBJECT (auth, "FIPS enabled but md5_pass present");
+      goto out;
+    }
+
     expected_response =
-        gst_rtsp_generate_digest_auth_response (NULL,
+      generate_sha256_digest_auth_response (auth,
         gst_rtsp_method_as_text (ctx->method), realm, user,
         digest_entry->pass, uri, nonce);
+  } else {
+    if (digest_entry->md5_pass) {
+      expected_response = gst_rtsp_generate_digest_auth_response_from_md5 (NULL,
+          gst_rtsp_method_as_text (ctx->method), digest_entry->md5_pass,
+          uri, nonce);
+    } else {
+      expected_response =
+          gst_rtsp_generate_digest_auth_response (NULL,
+          gst_rtsp_method_as_text (ctx->method), realm, user,
+          digest_entry->pass, uri, nonce);
+    }
   }
 
   if (!expected_response || strcmp (response, expected_response) != 0)
@@ -918,7 +1073,7 @@ default_generate_authenticate_header (GstRTSPAuth * auth, GstRTSPContext * ctx)
 
     auth_header =
         g_strdup_printf
-        ("Digest realm=\"%s\", nonce=\"%s\"", auth->priv->realm, nonce_value);
+        ("Digest %srealm=\"%s\", nonce=\"%s\"", (auth->priv->fips_enabled) ? "algorithm=\"SHA-256\", " : "", auth->priv->realm, nonce_value);
     gst_rtsp_message_add_header (ctx->response, GST_RTSP_HDR_WWW_AUTHENTICATE,
         auth_header);
     g_free (auth_header);
@@ -1261,4 +1416,13 @@ gst_rtsp_auth_get_realm (GstRTSPAuth * auth)
   g_return_val_if_fail (GST_IS_RTSP_AUTH (auth), NULL);
 
   return g_strdup (auth->priv->realm);
+}
+
+void
+gst_rtsp_auth_set_fips_enabled (GstRTSPAuth * auth,
+    gboolean enabled)
+{
+  g_return_if_fail (GST_IS_RTSP_AUTH (auth));
+
+  auth->priv->fips_enabled = enabled;
 }

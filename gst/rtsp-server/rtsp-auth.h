@@ -144,6 +144,9 @@ void                gst_rtsp_auth_set_realm         (GstRTSPAuth *auth, const gc
 GST_RTSP_SERVER_API
 gchar *             gst_rtsp_auth_get_realm         (GstRTSPAuth *auth);
 
+GST_RTSP_SERVER_API
+void                gst_rtsp_auth_set_fips_enabled (GstRTSPAuth * auth, gboolean enabled);
+
 /* helpers */
 
 GST_RTSP_SERVER_API
