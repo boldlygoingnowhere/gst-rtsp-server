@@ -2625,8 +2625,10 @@ send_tcp_message (GstRTSPStream * stream, gint idx)
 
   is_rtp = (idx == 0);
 
-  if (!any_transport_ready (stream, is_rtp))
-    return;
+  if (!any_transport_ready (stream, is_rtp)) {
+    //We continue so that we don't hold onto buffers and potentially critically needed memory
+    GST_INFO_OBJECT (stream, "No transports ready, but continuing!");
+  }
 
   priv->have_buffer[idx] = FALSE;
 
