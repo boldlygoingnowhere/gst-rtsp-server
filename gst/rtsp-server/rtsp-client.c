@@ -1794,6 +1794,7 @@ handle_play_request (GstRTSPClient * client, GstRTSPContext * ctx)
   gchar *seek_style = NULL;
   GstRTSPStatusCode sig_result;
   GPtrArray *transports;
+  gboolean rtp_no_sync = FALSE;
 
   if (!(session = ctx->session))
     goto no_session;
@@ -1832,9 +1833,17 @@ handle_play_request (GstRTSPClient * client, GstRTSPContext * ctx)
   if (rtspstate != GST_RTSP_STATE_PLAYING && rtspstate != GST_RTSP_STATE_READY)
     goto invalid_state;
 
+  res = gst_rtsp_message_get_header (ctx->request, GST_RTSP_HDR_RATE_CONTROL, &str, 0);
+  if (res == GST_RTSP_OK) {
+    if (str != NULL && g_strcmp0(str, "no") == 0) {
+      GST_WARNING ("Removing rate control for appsink (sink for TCP transport)");
+      rtp_no_sync = TRUE;
+    }
+  }
+
   /* update the pipeline */
   transports = gst_rtsp_session_media_get_transports (sessmedia);
-  if (!gst_rtsp_media_complete_pipeline (media, transports)) {
+  if (!gst_rtsp_media_complete_pipeline_ext (media, transports, rtp_no_sync)) {
     g_ptr_array_unref (transports);
     goto pipeline_error;
   }

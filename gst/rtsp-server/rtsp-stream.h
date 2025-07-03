@@ -321,6 +321,9 @@ GST_RTSP_SERVER_API
 gboolean          gst_rtsp_stream_complete_stream (GstRTSPStream * stream, const GstRTSPTransport * transport);
 
 GST_RTSP_SERVER_API
+gboolean          gst_rtsp_stream_complete_stream_ext (GstRTSPStream * stream, const GstRTSPTransport * transport, gboolean rtp_no_sync);
+
+GST_RTSP_SERVER_API
 gboolean           gst_rtsp_stream_is_complete (GstRTSPStream * stream);
 
 GST_RTSP_SERVER_API

@@ -3345,7 +3345,7 @@ plug_sink (GstRTSPStream * stream, const GstRTSPTransport * transport,
 
 /* must be called with lock */
 static gboolean
-create_sender_part (GstRTSPStream * stream, const GstRTSPTransport * transport)
+create_sender_part (GstRTSPStream * stream, const GstRTSPTransport * transport, gboolean rtp_no_sync)
 {
   GstRTSPStreamPrivate *priv;
   GstPad *pad;
@@ -3440,6 +3440,8 @@ create_sender_part (GstRTSPStream * stream, const GstRTSPTransport * transport)
        * deadlock. This is only needed for sink sending RTCP data. */
       if (i == 1)
         g_object_set (priv->appsink[i], "async", FALSE, "sync", FALSE, NULL);
+      else if (rtp_no_sync)
+        g_object_set (priv->appsink[i], "sync", FALSE, NULL);     
 
       gst_app_sink_set_callbacks (GST_APP_SINK_CAST (priv->appsink[i]),
           &sink_cb, stream, NULL);
@@ -5363,6 +5365,25 @@ gboolean
 gst_rtsp_stream_complete_stream (GstRTSPStream * stream,
     const GstRTSPTransport * transport)
 {
+  return gst_rtsp_stream_complete_stream_ext (stream, transport, FALSE);
+}
+
+/**
+ * gst_rtsp_stream_complete_stream_ext:
+ * @stream: a #GstRTSPStream
+ * @transport: a #GstRTSPTransport
+ *
+ * Add a receiver and sender part to the pipeline based on the transport from
+ * SETUP.
+ *
+ * Returns: %TRUE if the stream has been sucessfully updated.
+ *
+ * Since: 1.14
+ */
+gboolean
+gst_rtsp_stream_complete_stream_ext (GstRTSPStream * stream,
+    const GstRTSPTransport * transport, gboolean rtp_no_sync)
+{
   GstRTSPStreamPrivate *priv;
 
   g_return_val_if_fail (GST_IS_RTSP_STREAM (stream), FALSE);
@@ -5379,7 +5400,7 @@ gst_rtsp_stream_complete_stream (GstRTSPStream * stream,
     goto create_receiver_error;
 
   /* in the RECORD case, we only add RTCP sender part */
-  if (!create_sender_part (stream, transport))
+  if (!create_sender_part (stream, transport, rtp_no_sync))
     goto create_sender_error;
 
   priv->configured_protocols |= transport->lower_transport;

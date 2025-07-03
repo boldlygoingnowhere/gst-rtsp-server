@@ -4758,6 +4758,24 @@ gst_rtsp_media_seekable (GstRTSPMedia * media)
 gboolean
 gst_rtsp_media_complete_pipeline (GstRTSPMedia * media, GPtrArray * transports)
 {
+  return gst_rtsp_media_complete_pipeline_ext (media, transports, FALSE);
+}
+
+/**
+ * gst_rtsp_media_complete_pipeline_ext:
+ * @media: a #GstRTSPMedia
+ * @transports: (element-type GstRTSPTransport): a list of #GstRTSPTransport
+ *
+ * Add a receiver and sender parts to the pipeline based on the transport from
+ * SETUP.
+ *
+ * Returns: %TRUE if the media pipeline has been sucessfully updated.
+ *
+ * Since: 1.14
+ */
+gboolean
+gst_rtsp_media_complete_pipeline_ext (GstRTSPMedia * media, GPtrArray * transports, gboolean rtp_no_sync)
+{
   GstRTSPMediaPrivate *priv;
   guint i;
 
@@ -4784,7 +4802,7 @@ gst_rtsp_media_complete_pipeline (GstRTSPMedia * media, GPtrArray * transports)
 
     rtsp_transport = gst_rtsp_stream_transport_get_transport (transport);
 
-    if (!gst_rtsp_stream_complete_stream (stream, rtsp_transport)) {
+    if (!gst_rtsp_stream_complete_stream_ext (stream, rtsp_transport, rtp_no_sync)) {
       g_mutex_unlock (&priv->lock);
       return FALSE;
     }
