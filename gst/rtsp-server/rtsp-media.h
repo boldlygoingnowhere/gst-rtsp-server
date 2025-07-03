@@ -315,6 +315,12 @@ GST_RTSP_SERVER_API
 GstRTSPPublishClockMode gst_rtsp_media_get_publish_clock_mode (GstRTSPMedia * media);
 
 GST_RTSP_SERVER_API
+void                  gst_rtsp_media_set_range_clock_offset (GstRTSPMedia * media, GstClockTime offset);
+
+GST_RTSP_SERVER_API
+GstClockTime          gst_rtsp_media_get_range_clock_offset (GstRTSPMedia * media);
+
+GST_RTSP_SERVER_API
 gboolean                gst_rtsp_media_set_max_mcast_ttl  (GstRTSPMedia *media, guint ttl);
 
 GST_RTSP_SERVER_API
@@ -392,6 +398,11 @@ GstClockTimeDiff      gst_rtsp_media_seekable         (GstRTSPMedia *media);
 
 GST_RTSP_SERVER_API
 gchar *               gst_rtsp_media_get_range_string (GstRTSPMedia *media,
+                                                       gboolean play,
+                                                       GstRTSPRangeUnit unit);
+
+GST_RTSP_SERVER_API
+gchar *               gst_rtsp_media_get_range_string_with_clock_offset (GstRTSPMedia *media,
                                                        gboolean play,
                                                        GstRTSPRangeUnit unit);
 
