@@ -46,6 +46,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include <gst/sdp/gstmikey.h>
 #include <gst/rtsp/gstrtsp-enumtypes.h>
@@ -111,6 +112,8 @@ struct _GstRTSPClientPrivate
 
   GHashTable *pipelined_requests;       /* pipelined_request_id -> session_id */
   GstRTSPTunnelState tstate;
+
+  guint64 play_start_time_ms;
 };
 
 typedef struct
@@ -1957,6 +1960,15 @@ handle_play_request (GstRTSPClient * client, GstRTSPContext * ctx)
   gst_rtsp_session_media_set_state (sessmedia, GST_STATE_PLAYING);
 
   gst_rtsp_session_media_set_rtsp_state (sessmedia, GST_RTSP_STATE_PLAYING);
+
+  {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    g_mutex_lock (&client->priv->lock);
+    client->priv->play_start_time_ms = 
+      ((guint64)ts.tv_sec * 1000) + ((guint64)ts.tv_nsec / (1000 * 1000));
+    g_mutex_unlock (&client->priv->lock);
+  }
 
   g_signal_emit (client, gst_rtsp_client_signals[SIGNAL_PLAY_REQUEST], 0, ctx);
 
@@ -4992,6 +5004,35 @@ restart:
 
   if (func)
     g_hash_table_unref (visited);
+
+  return result;
+}
+
+GSocket *
+gst_rtsp_client_get_write_socket (GstRTSPClient *client)
+{
+  return gst_rtsp_connection_get_write_socket (client->priv->connection);
+}
+
+void
+gst_rtsp_client_get_watch_curr_backlog (GstRTSPClient *client,
+                                        gsize *bytes, guint *messages)
+{
+  GstRTSPClientPrivate *priv = client->priv;
+  g_mutex_lock (&priv->watch_lock);
+  gst_rtsp_watch_get_curr_backlog (priv->watch, bytes, messages);
+  g_mutex_unlock (&priv->watch_lock);
+}
+
+guint64
+gst_rtsp_client_get_play_start_time_ms (GstRTSPClient *client)
+{
+  GstRTSPClientPrivate *priv = client->priv;
+  guint64 result;
+
+  g_mutex_lock (&priv->lock);
+  result = priv->play_start_time_ms;
+  g_mutex_unlock (&priv->lock);
 
   return result;
 }

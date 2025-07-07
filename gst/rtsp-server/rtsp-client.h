@@ -260,6 +260,15 @@ GList *                gst_rtsp_client_session_filter    (GstRTSPClient *client,
                                                           gpointer user_data);
 
 
+GST_RTSP_SERVER_API
+GSocket * gst_rtsp_client_get_write_socket (GstRTSPClient *client);
+
+GST_RTSP_SERVER_API
+void gst_rtsp_client_get_watch_curr_backlog (GstRTSPClient *client,
+                                             gsize *bytes, guint *messages);
+
+GST_RTSP_SERVER_API
+guint64 gst_rtsp_client_get_play_start_time_ms (GstRTSPClient *client);
 
 #ifdef G_DEFINE_AUTOPTR_CLEANUP_FUNC
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GstRTSPClient, gst_object_unref)
