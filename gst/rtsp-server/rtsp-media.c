@@ -112,6 +112,7 @@ struct _GstRTSPMediaPrivate
   gchar *multicast_iface;
   guint max_mcast_ttl;
   gboolean bind_mcast_address;
+  gboolean enable_rtcp;
   gboolean blocked;
   GstRTSPTransportMode transport_mode;
   gboolean stop_on_disconnect;
@@ -181,6 +182,7 @@ struct _GstRTSPMediaPrivate
 #define DEFAULT_MAX_MCAST_TTL   255
 #define DEFAULT_BIND_MCAST_ADDRESS FALSE
 #define DEFAULT_DO_RATE_CONTROL TRUE
+#define DEFAULT_ENABLE_RTCP     TRUE
 
 #define DEFAULT_DO_RETRANSMISSION FALSE
 
@@ -493,6 +495,7 @@ gst_rtsp_media_init (GstRTSPMedia * media)
   priv->do_retransmission = DEFAULT_DO_RETRANSMISSION;
   priv->max_mcast_ttl = DEFAULT_MAX_MCAST_TTL;
   priv->bind_mcast_address = DEFAULT_BIND_MCAST_ADDRESS;
+  priv->enable_rtcp = DEFAULT_ENABLE_RTCP;
   priv->do_rate_control = DEFAULT_DO_RATE_CONTROL;
   priv->dscp_qos = DEFAULT_DSCP_QOS;
   priv->expected_async_done = FALSE;
@@ -2173,6 +2176,20 @@ gst_rtsp_media_is_bind_mcast_address (GstRTSPMedia * media)
   return result;
 }
 
+void
+gst_rtsp_media_set_enable_rtcp (GstRTSPMedia * media, gboolean enable)
+{
+  GstRTSPMediaPrivate *priv;
+
+  g_return_if_fail (GST_IS_RTSP_MEDIA (media));
+
+  priv = media->priv;
+
+  g_mutex_lock (&priv->lock);
+  priv->enable_rtcp = enable;
+  g_mutex_unlock (&priv->lock);
+}
+
 static GList *
 _find_payload_types (GstRTSPMedia * media)
 {
@@ -2494,6 +2511,7 @@ gst_rtsp_media_create_stream (GstRTSPMedia * media, GstElement * payloader,
   gst_rtsp_stream_set_multicast_iface (stream, priv->multicast_iface);
   gst_rtsp_stream_set_max_mcast_ttl (stream, priv->max_mcast_ttl);
   gst_rtsp_stream_set_bind_mcast_address (stream, priv->bind_mcast_address);
+  gst_rtsp_stream_set_enable_rtcp (stream, priv->enable_rtcp);
   gst_rtsp_stream_set_profiles (stream, priv->profiles);
   gst_rtsp_stream_set_protocols (stream, priv->protocols);
   gst_rtsp_stream_set_retransmission_time (stream, priv->rtx_time);
@@ -4813,6 +4831,21 @@ preroll_failed:
   }
 }
 
+static void
+gst_rtsp_media_unblock_rtcp (GstRTSPMedia * media)
+{
+  GstRTSPMediaPrivate *priv;
+  guint i;
+
+  priv = media->priv;
+  g_mutex_lock (&priv->lock);
+  for (i = 0; i < priv->streams->len; i++) {
+    GstRTSPStream *stream = g_ptr_array_index (priv->streams, i);
+    gst_rtsp_stream_unblock_rtcp (stream);
+  }
+  g_mutex_unlock (&priv->lock);
+}
+
 /**
  * gst_rtsp_media_unsuspend:
  * @media: a #GstRTSPMedia
@@ -4841,6 +4874,7 @@ gst_rtsp_media_unsuspend (GstRTSPMedia * media)
   }
 
 done:
+  gst_rtsp_media_unblock_rtcp (media);
   g_rec_mutex_unlock (&priv->state_lock);
 
   return TRUE;
