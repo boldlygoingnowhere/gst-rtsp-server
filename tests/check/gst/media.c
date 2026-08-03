@@ -128,14 +128,13 @@ GST_START_TEST (test_media_seek)
   gst_rtsp_range_free (range);
 
   fail_unless (gst_rtsp_media_unprepare (media));
+  gst_rtsp_media_unlock (media);
   g_object_unref (media);
 
   gst_rtsp_url_free (url);
   g_object_unref (factory);
 
   g_object_unref (pool);
-
-  gst_rtsp_thread_pool_cleanup ();
 }
 
 GST_END_TEST;
@@ -210,14 +209,13 @@ media_playback_seek_one_active_stream (const gchar * launch_line)
   g_free (range_str);
 
   fail_unless (gst_rtsp_media_unprepare (media));
+  gst_rtsp_media_unlock (media);
   g_object_unref (media);
 
   gst_rtsp_url_free (url);
   g_object_unref (factory);
 
   g_object_unref (pool);
-
-  gst_rtsp_thread_pool_cleanup ();
 }
 
 /* case: media is complete and contains two streams but only one is active,
@@ -307,14 +305,13 @@ GST_START_TEST (test_media_seek_no_sinks)
   fail_if (gst_rtsp_media_seek (media, range));
 
   gst_rtsp_range_free (range);
+  gst_rtsp_media_unlock (media);
   g_object_unref (media);
 
   gst_rtsp_url_free (url);
   g_object_unref (factory);
 
   g_object_unref (pool);
-
-  gst_rtsp_thread_pool_cleanup ();
 }
 
 GST_END_TEST;
@@ -385,6 +382,7 @@ test_prepare_reusable (const gchar * launch_line, gboolean is_live)
   fail_unless (media_has_sdp (media));
   fail_unless (gst_rtsp_media_unprepare (media));
 
+  gst_rtsp_media_unlock (media);
   g_object_unref (media);
   gst_rtsp_url_free (url);
   g_object_unref (factory);
@@ -439,12 +437,12 @@ GST_START_TEST (test_media_prepare)
       GST_RTSP_THREAD_TYPE_MEDIA, NULL);
   fail_if (gst_rtsp_media_prepare (media, thread));
 
+  gst_rtsp_media_unlock (media);
   g_object_unref (media);
   gst_rtsp_url_free (url);
   g_object_unref (factory);
 
   g_object_unref (pool);
-  gst_rtsp_thread_pool_cleanup ();
 }
 
 GST_END_TEST;
@@ -606,11 +604,11 @@ GST_START_TEST (test_media_shared_race_test_unsuspend_vs_set_state_null)
   g_cond_clear (&sync_cond);
   g_mutex_clear (&sync_mutex);
   fail_unless (gst_rtsp_media_unprepare (media));
+  gst_rtsp_media_unlock (media);
   g_object_unref (media);
   gst_rtsp_url_free (url);
   g_object_unref (factory);
   g_object_unref (pool);
-  gst_rtsp_thread_pool_cleanup ();
 }
 
 GST_END_TEST;
@@ -702,8 +700,6 @@ GST_START_TEST (test_media_dyn_prepare)
   gst_object_unref (srcpad);
   g_object_unref (media);
   g_object_unref (pool);
-
-  gst_rtsp_thread_pool_cleanup ();
 }
 
 GST_END_TEST;
@@ -727,6 +723,7 @@ GST_START_TEST (test_media_take_pipeline)
   pipeline = gst_pipeline_new ("media-pipeline");
   gst_rtsp_media_take_pipeline (media, GST_PIPELINE_CAST (pipeline));
 
+  gst_rtsp_media_unlock (media);
   g_object_unref (media);
   gst_rtsp_url_free (url);
   g_object_unref (factory);
@@ -761,6 +758,7 @@ GST_START_TEST (test_media_reset)
   fail_unless_equals_int64 (gst_rtsp_media_seekable (media), G_MAXINT64);
   fail_unless (gst_rtsp_media_suspend (media));
   fail_unless (gst_rtsp_media_unprepare (media));
+  gst_rtsp_media_unlock (media);
   g_object_unref (media);
 
   media = gst_rtsp_media_factory_construct (factory, url);
@@ -774,13 +772,12 @@ GST_START_TEST (test_media_reset)
   fail_unless_equals_int64 (gst_rtsp_media_seekable (media), G_MAXINT64);
   fail_unless (gst_rtsp_media_suspend (media));
   fail_unless (gst_rtsp_media_unprepare (media));
+  gst_rtsp_media_unlock (media);
   g_object_unref (media);
 
   gst_rtsp_url_free (url);
   g_object_unref (factory);
   g_object_unref (pool);
-
-  gst_rtsp_thread_pool_cleanup ();
 }
 
 GST_END_TEST;
@@ -857,12 +854,79 @@ GST_START_TEST (test_media_multidyn_prepare)
   gst_object_unref (srcpad1);
   g_object_unref (media);
   g_object_unref (pool);
-
-  gst_rtsp_thread_pool_cleanup ();
 }
 
 GST_END_TEST;
 
+static gboolean
+pipeline_error (GstRTSPMedia * media, GstMessage * message, guint * data)
+{
+  GError *gerror = NULL;
+
+  /* verify that the correct error was received */
+  gst_message_parse_error (message, &gerror, NULL);
+  ck_assert_str_eq (GST_MESSAGE_SRC_NAME (message), "src0");
+  ck_assert_ptr_ne (gerror, NULL);
+  ck_assert_int_eq (gerror->domain, GST_STREAM_ERROR);
+  ck_assert_int_eq (gerror->code, GST_STREAM_ERROR_FAILED);
+  ck_assert_str_eq (gerror->message, "Internal data stream error.");
+  (*data)++;
+  g_error_free (gerror);
+
+  return TRUE;
+}
+
+GST_START_TEST (test_media_pipeline_error)
+{
+  GstRTSPMediaFactory *factory;
+  GstRTSPMedia *media;
+  GstRTSPUrl *url;
+  GstRTSPThreadPool *pool;
+  GstRTSPThread *thread;
+  guint handled_messages = 0;
+
+  pool = gst_rtsp_thread_pool_new ();
+
+  factory = gst_rtsp_media_factory_new ();
+  ck_assert (!gst_rtsp_media_factory_is_shared (factory));
+  ck_assert (gst_rtsp_url_parse ("rtsp://localhost:8554/test",
+          &url) == GST_RTSP_OK);
+
+  /* add faulty caps filter to fail linking when preparing media, this will
+   * result in an error being posted on the pipelines bus. */
+  gst_rtsp_media_factory_set_launch (factory,
+      "( videotestsrc name=src0 ! video/fail_prepare ! rtpvrawpay pt=96 name=pay0 )");
+
+  media = gst_rtsp_media_factory_construct (factory, url);
+  ck_assert (GST_IS_RTSP_MEDIA (media));
+  ck_assert_int_eq (gst_rtsp_media_n_streams (media), 1);
+
+  /* subscribe to pipeline errors */
+  g_signal_connect (media, "handle-message::error", G_CALLBACK (pipeline_error),
+      &handled_messages);
+
+  thread = gst_rtsp_thread_pool_get_thread (pool,
+      GST_RTSP_THREAD_TYPE_MEDIA, NULL);
+  ck_assert (!gst_rtsp_media_prepare (media, thread));
+  ck_assert_uint_eq (handled_messages, 1);
+
+  gst_rtsp_media_unlock (media);
+  g_object_unref (media);
+  gst_rtsp_url_free (url);
+  g_object_unref (factory);
+
+  g_object_unref (pool);
+}
+
+GST_END_TEST;
+
+
+
+static void
+teardown (void)
+{
+  gst_rtsp_thread_pool_cleanup ();
+}
 
 static Suite *
 rtspmedia_suite (void)
@@ -872,6 +936,7 @@ rtspmedia_suite (void)
   gboolean has_avidemux;
 
   suite_add_tcase (s, tc);
+  tcase_add_checked_fixture (tc, NULL, teardown);
   tcase_set_timeout (tc, 20);
 
   has_avidemux = gst_registry_check_feature_version (gst_registry_get (),
@@ -893,6 +958,7 @@ rtspmedia_suite (void)
   tcase_add_test (tc, test_media_take_pipeline);
   tcase_add_test (tc, test_media_reset);
   tcase_add_test (tc, test_media_multidyn_prepare);
+  tcase_add_test (tc, test_media_pipeline_error);
 
   return s;
 }

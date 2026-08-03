@@ -1,6 +1,6 @@
 project('gst-rtsp-server', 'c',
-  version : '1.19.2',
-  meson_version : '>= 0.54',
+  version : '1.28.2',
+  meson_version : '>= 1.4',
   default_options : ['warning_level=1', 'buildtype=debugoptimized'])
 
 gst_version = meson.project_version()
@@ -13,10 +13,16 @@ gst_version_micro = version_arr[2].to_int()
 else
   gst_version_nano = 0
 endif
-gst_version_is_dev = gst_version_minor % 2 == 1 and gst_version_micro < 90
+gst_version_is_stable = gst_version_minor.is_even()
+gst_version_is_dev = gst_version_minor.is_odd() and gst_version_micro < 90
 
-glib_req = '>= 2.56.0'
-gst_req = '>= @0@.@1@.0'.format(gst_version_major, gst_version_minor)
+glib_req = '>= 2.64.0'
+
+if gst_version_is_stable
+  gst_req = '>= @0@.@1@.0'.format(gst_version_major, gst_version_minor)
+else
+  gst_req = '>= ' + gst_version
+endif
 
 api_version = '1.0'
 soversion = 0
@@ -36,18 +42,16 @@ if cc.has_link_argument('-Wl,-Bsymbolic-functions')
   add_project_link_arguments('-Wl,-Bsymbolic-functions', language : 'c')
 endif
 
-# Symbol visibility
-if cc.get_id() == 'msvc'
-  export_define = '__declspec(dllexport) extern'
-elif cc.has_argument('-fvisibility=hidden')
-  add_project_arguments('-fvisibility=hidden', language: 'c')
-  export_define = 'extern __attribute__ ((visibility ("default")))'
-else
-  export_define = 'extern'
+# glib doesn't support unloading, which means that unloading and reloading
+# any library that registers static types will fail
+if cc.has_link_argument('-Wl,-z,nodelete')
+  add_project_link_arguments('-Wl,-z,nodelete', language: 'c')
 endif
 
-# Passing this through the command line would be too messy
-cdata.set('GST_API_EXPORT', export_define)
+# Symbol visibility
+if cc.has_argument('-fvisibility=hidden')
+  add_project_arguments('-fvisibility=hidden', language: 'c')
+endif
 
 # Disable strict aliasing
 if cc.has_argument('-fno-strict-aliasing')
@@ -60,20 +64,20 @@ if gst_version_is_dev
   add_project_arguments('-DG_DISABLE_DEPRECATED', language: 'c')
 endif
 
-cast_checks = get_option('gobject-cast-checks')
-if cast_checks.disabled() or (cast_checks.auto() and not gst_version_is_dev)
+# Same logic as in GLib.
+glib_debug = get_option('glib_debug')
+if glib_debug.disabled() or (
+   glib_debug.auto() and (not get_option('debug') or get_option('optimization') not in [ '0', 'g' ]))
   message('Disabling GLib cast checks')
   add_project_arguments('-DG_DISABLE_CAST_CHECKS', language: 'c')
 endif
 
-glib_asserts = get_option('glib-asserts')
-if glib_asserts.disabled() or (glib_asserts.auto() and not gst_version_is_dev)
+if not get_option('glib_assert')
   message('Disabling GLib asserts')
   add_project_arguments('-DG_DISABLE_ASSERT', language: 'c')
 endif
 
-glib_checks = get_option('glib-checks')
-if glib_checks.disabled() or (glib_checks.auto() and not gst_version_is_dev)
+if not get_option('glib_checks')
   message('Disabling GLib checks')
   add_project_arguments('-DG_DISABLE_CHECKS', language: 'c')
 endif
@@ -105,24 +109,28 @@ cdata.set_quoted('GST_PACKAGE_ORIGIN', get_option('package-origin'))
 
 rtspserver_args = ['-DHAVE_CONFIG_H']
 
+# NOTE: Keep entries alphabetically sorted
 warning_flags = [
-  '-Wmissing-declarations',
-  '-Wmissing-prototypes',
-  '-Wredundant-decls',
-  '-Wundef',
-  '-Wwrite-strings',
+  '-Waddress',
+  '-Waggregate-return',
   '-Wformat',
   '-Wformat-nonliteral',
   '-Wformat-security',
-  '-Wold-style-definition',
-  '-Waggregate-return',
+  '-Wimplicit-fallthrough=3',
   '-Winit-self',
+  '-Wmissing-declarations',
   '-Wmissing-include-dirs',
-  '-Waddress',
+  '-Wmissing-parameter-type',
+  '-Wmissing-prototypes',
   '-Wno-multichar',
-  '-Wdeclaration-after-statement',
-  '-Wvla',
+  '-Wold-style-definition',
   '-Wpointer-arith',
+  '-Wredundant-decls',
+  '-Wshift-negative-value',
+  '-Wtype-limits',
+  '-Wundef',
+  '-Wvla',
+  '-Wwrite-strings',
 ]
 
 foreach extra_arg : warning_flags
@@ -133,8 +141,6 @@ endforeach
 
 rtspserver_incs = include_directories('gst/rtsp-server', '.')
 
-glib_dep = dependency('glib-2.0', version : glib_req,
-  fallback: ['glib', 'libglib_dep'])
 gst_dep = dependency('gstreamer-1.0', version : gst_req,
   fallback : ['gstreamer', 'gst_dep'])
 gstrtsp_dep = dependency('gstreamer-rtsp-1.0', version : gst_req,
@@ -145,6 +151,8 @@ gstsdp_dep = dependency('gstreamer-sdp-1.0', version : gst_req,
   fallback : ['gst-plugins-base', 'sdp_dep'])
 gstapp_dep = dependency('gstreamer-app-1.0', version : gst_req,
   fallback : ['gst-plugins-base', 'app_dep'])
+gstvideo_dep = dependency('gstreamer-video-1.0', version : gst_req,
+  fallback : ['gst-plugins-base', 'video_dep'])
 gstnet_dep = dependency('gstreamer-net-1.0', version : gst_req,
   fallback : ['gstreamer', 'gst_net_dep'])
 if host_machine.system() != 'windows'
@@ -176,6 +184,7 @@ gir_init_section = [ '--add-init-section=extern void gst_init(gint*,gchar**);' +
     'g_setenv("GST_REGISTRY_1.0", "@0@", TRUE);'.format(meson.current_build_dir() + '/gir_empty_registry.reg') + \
     'g_setenv("GST_PLUGIN_PATH_1_0", "", TRUE);' + \
     'g_setenv("GST_PLUGIN_SYSTEM_PATH_1_0", "", TRUE);' + \
+    'g_setenv("GST_TRACERS", "", TRUE);' + \
     'gst_init(NULL,NULL);', '--quiet']
 
 pkgconfig = import('pkgconfig')
@@ -186,32 +195,61 @@ if get_option('default_library') == 'shared'
 endif
 
 plugins = []
+plugin_sources = {}
 pkgconfig_subdirs = ['gstreamer-1.0']
+static_build = get_option('default_library') == 'static'
+gst_libraries = []
+
+if host_machine.system() == 'windows'
+  pathsep = ';'
+else
+  pathsep = ':'
+endif
 
 subdir('gst')
-if not get_option('tests').disabled()
-  subdir('tests')
-endif
-if not get_option('examples').disabled()
-  subdir('examples')
-endif
+
+subdir('tests')
+subdir('examples')
+
 subdir('docs')
 
 # Set release date
 if gst_version_nano == 0
   extract_release_date = find_program('scripts/extract-release-date-from-doap-file.py')
-  run_result = run_command(extract_release_date, gst_version, files('gst-rtsp-server.doap'))
-  if run_result.returncode() == 0
-    release_date = run_result.stdout().strip()
-    cdata.set_quoted('GST_PACKAGE_RELEASE_DATETIME', release_date)
-    message('Package release date: ' + release_date)
-  else
-    # Error out if our release can't be found in the .doap file
-    error(run_result.stderr())
-  endif
+  run_result = run_command(extract_release_date, gst_version, files('gst-rtsp-server.doap'), check: true)
+  release_date = run_result.stdout().strip()
+  cdata.set_quoted('GST_PACKAGE_RELEASE_DATETIME', release_date)
+  message('Package release date: ' + release_date)
+endif
+
+glib_gio_dep = dependency('gio-2.0', version: glib_req)
+if glib_gio_dep.version().version_compare('< 2.67.4')
+  cdata.set('g_memdup2(ptr,sz)', '(G_LIKELY(((guint64)(sz)) < G_MAXUINT)) ? g_memdup(ptr,sz) : (g_abort(),NULL)')
 endif
 
 configure_file(output: 'config.h', configuration: cdata)
 
-python3 = import('python').find_installation()
-run_command(python3, '-c', 'import shutil; shutil.copy("hooks/pre-commit.hook", ".git/hooks/pre-commit")')
+meson.add_dist_script('scripts/gen-changelog.py', meson.project_name(), '1.26.0', meson.project_version())
+
+# dist common files from monorepo root
+if not meson.is_subproject()
+  meson.add_dist_script('scripts/dist-common-files.py', meson.project_version())
+endif
+
+plugin_names = []
+gst_plugins = []
+foreach plugin: plugins
+  pkgconfig.generate(plugin, install_dir: plugins_pkgconfig_install_dir)
+  dep = declare_dependency(link_with: plugin, variables: {'full_path': plugin.full_path()})
+  meson.override_dependency(plugin.name(), dep)
+  gst_plugins += [dep]
+  if plugin.name().startswith('gst')
+    plugin_names += [plugin.name().substring(3)]
+  else
+    plugin_names += [plugin.name()]
+  endif
+endforeach
+
+summary({
+    'Plugins': plugin_names,
+}, list_sep: ', ')

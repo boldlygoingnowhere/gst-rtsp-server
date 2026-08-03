@@ -32,6 +32,236 @@ RTSP server library based on GStreamer
 
  <release>
   <Version>
+   <revision>1.28.2</revision>
+   <branch>1.28</branch>
+   <name></name>
+   <created>2026-04-07</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.28.2.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.28.1</revision>
+   <branch>1.28</branch>
+   <name></name>
+   <created>2026-02-26</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.28.1.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.28.0</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2026-01-27</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.28.0.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.27.90</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2026-01-05</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.27.90.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.27.50</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2025-12-09</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.27.50.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.27.2</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2025-09-07</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.27.2.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.27.1</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2025-07-08</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.27.1.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.26.0</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2025-03-11</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.26.0.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.25.90</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2025-02-23</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.25.90.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.25.50</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2025-02-09</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.25.50.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.25.1</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2025-01-14</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.25.1.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.24.0</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2024-03-04</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.24.0.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.23.90</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2024-02-23</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.23.90.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.23.2</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2024-02-15</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.23.2.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.23.1</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2024-02-06</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.23.1.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.22.0</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2023-01-23</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.22.0.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.21.90</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2023-01-13</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.21.90.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.21.3</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2022-12-05</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.21.3.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.21.2</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2022-11-07</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.21.2.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.21.1</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2022-10-04</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.21.1.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.20.0</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2022-02-03</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.20.0.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.19.90</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2022-01-28</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.19.90.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
+   <revision>1.19.3</revision>
+   <branch>main</branch>
+   <name></name>
+   <created>2021-11-03</created>
+   <file-release rdf:resource="https://gstreamer.freedesktop.org/src/gst-rtsp-server/gst-rtsp-server-1.19.3.tar.xz" />
+  </Version>
+ </release>
+
+ <release>
+  <Version>
    <revision>1.19.2</revision>
    <branch>master</branch>
    <name></name>

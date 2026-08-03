@@ -40,6 +40,8 @@ gboolean                 gst_rtsp_stream_transport_backlog_pop   (GstRTSPStreamT
                                                                   GstBufferList **buffer_list,
                                                                   gboolean *is_rtp);
 
+gboolean                 gst_rtsp_stream_transport_backlog_peek_is_rtp (GstRTSPStreamTransport * trans);
+
 gboolean                 gst_rtsp_stream_transport_backlog_is_empty (GstRTSPStreamTransport *trans);
 
 void                     gst_rtsp_stream_transport_clear_backlog (GstRTSPStreamTransport * trans);
@@ -60,6 +62,14 @@ gboolean                 gst_rtsp_stream_is_tcp_receiver (GstRTSPStream * stream
 
 void                     gst_rtsp_media_set_enable_rtcp (GstRTSPMedia *media, gboolean enable);
 void                     gst_rtsp_stream_set_enable_rtcp (GstRTSPStream *stream, gboolean enable);
+
+void                     gst_rtsp_stream_set_drop_delta_units (GstRTSPStream * stream, gboolean drop);
+
+gboolean                 gst_rtsp_stream_install_drop_probe (GstRTSPStream * stream);
+
+GstRTSPStream *          gst_rtsp_media_create_and_join_stream (GstRTSPMedia * media,
+                                                                GstElement * payloader,
+                                                                GstPad * pad);
 
 G_END_DECLS
 

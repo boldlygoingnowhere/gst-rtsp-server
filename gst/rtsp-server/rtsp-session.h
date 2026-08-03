@@ -86,13 +86,13 @@ GType                  gst_rtsp_session_get_type             (void);
 /* create a new session */
 
 GST_RTSP_SERVER_API
-GstRTSPSession *       gst_rtsp_session_new                  (const gchar *sessionid);
+GstRTSPSession *       gst_rtsp_session_new                  (const gchar *sessionid) G_GNUC_WARN_UNUSED_RESULT;
 
 GST_RTSP_SERVER_API
 const gchar *          gst_rtsp_session_get_sessionid        (GstRTSPSession *session);
 
 GST_RTSP_SERVER_API
-gchar *                gst_rtsp_session_get_header           (GstRTSPSession *session);
+gchar *                gst_rtsp_session_get_header           (GstRTSPSession *session) G_GNUC_WARN_UNUSED_RESULT;
 
 GST_RTSP_SERVER_API
 void                   gst_rtsp_session_set_timeout          (GstRTSPSession *session, guint timeout);
@@ -141,7 +141,12 @@ GST_RTSP_SERVER_API
 GstRTSPSessionMedia *  gst_rtsp_session_get_media            (GstRTSPSession *sess,
                                                               const gchar *path,
                                                               gint * matched);
+/* get media in a session, increasing its reference count */
 
+GST_RTSP_SERVER_API
+GstRTSPSessionMedia *  gst_rtsp_session_dup_media            (GstRTSPSession *sess,
+                                                              const gchar *path,
+                                                              gint * matched) G_GNUC_WARN_UNUSED_RESULT;
 /**
  * GstRTSPSessionFilterFunc:
  * @sess: a #GstRTSPSession object
@@ -169,7 +174,7 @@ typedef GstRTSPFilterResult (*GstRTSPSessionFilterFunc)  (GstRTSPSession *sess,
 GST_RTSP_SERVER_API
 GList *                gst_rtsp_session_filter           (GstRTSPSession *sess,
                                                           GstRTSPSessionFilterFunc func,
-                                                          gpointer user_data);
+                                                          gpointer user_data) G_GNUC_WARN_UNUSED_RESULT;
 
 
 #ifdef G_DEFINE_AUTOPTR_CLEANUP_FUNC

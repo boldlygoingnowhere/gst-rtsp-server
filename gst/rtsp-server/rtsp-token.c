@@ -68,7 +68,7 @@ _gst_rtsp_token_free (GstRTSPToken * token)
   gst_structure_set_parent_refcount (impl->structure, NULL);
   gst_structure_free (impl->structure);
 
-  g_slice_free1 (sizeof (GstRTSPTokenImpl), token);
+  g_free (token);
 }
 
 static GstRTSPToken *
@@ -79,7 +79,7 @@ _gst_rtsp_token_copy (GstRTSPTokenImpl * token)
 
   structure = gst_structure_copy (token->structure);
 
-  copy = g_slice_new0 (GstRTSPTokenImpl);
+  copy = g_new0 (GstRTSPTokenImpl, 1);
   gst_rtsp_token_init (copy, structure);
 
   return (GstRTSPToken *) copy;
@@ -114,7 +114,7 @@ gst_rtsp_token_new_empty (void)
   s = gst_structure_new_empty ("GstRTSPToken");
   g_return_val_if_fail (s != NULL, NULL);
 
-  token = g_slice_new0 (GstRTSPTokenImpl);
+  token = g_new0 (GstRTSPTokenImpl, 1);
   gst_rtsp_token_init (token, s);
 
   return (GstRTSPToken *) token;
@@ -239,14 +239,14 @@ gst_rtsp_token_get_structure (GstRTSPToken * token)
 
 /**
  * gst_rtsp_token_writable_structure:
- * @token: The #GstRTSPToken.
+ * @token: A writable #GstRTSPToken.
  *
  * Get a writable version of the structure.
  *
  * Returns: (transfer none): The structure of the token. The structure is still
  * owned by the token, which means that you should not free it and that the
- * pointer becomes invalid when you free the token. This function checks if
- * @token is writable and will never return %NULL.
+ * pointer becomes invalid when you free the token. This function ensures
+ * that @token is writable, and if so, will never return %NULL.
  *
  * MT safe.
  */

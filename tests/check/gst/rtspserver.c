@@ -631,6 +631,7 @@ teardown (void)
     server = NULL;
   }
   test_port = 0;
+  gst_rtsp_thread_pool_cleanup ();
 }
 
 GST_START_TEST (test_connect)
@@ -2401,6 +2402,8 @@ GST_START_TEST (test_record_tcp)
   stop_server ();
   iterate ();
   g_free (session);
+  /* release the reference to server_sink, obtained in media_constructed_cb */
+  gst_object_unref (server_sink);
 }
 
 GST_END_TEST;
@@ -2575,6 +2578,8 @@ GST_START_TEST (test_suspend_mode_reset_only_audio)
           session) == GST_RTSP_STS_OK);
 
   /* clean up and iterate so the clean-up can finish */
+  g_object_unref (rtp_socket);
+  g_object_unref (rtcp_socket);
   g_free (session);
   gst_rtsp_transport_free (audio_transport);
   gst_sdp_message_free (sdp_message);
@@ -2698,6 +2703,7 @@ GST_START_TEST (test_double_play)
 
   stop_server ();
   iterate ();
+  g_object_unref (client);
 }
 
 GST_END_TEST;

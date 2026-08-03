@@ -149,8 +149,10 @@ gst_rtsp_session_pool_finalize (GObject * object)
 {
   GstRTSPSessionPool *pool = GST_RTSP_SESSION_POOL (object);
   GstRTSPSessionPoolPrivate *priv = pool->priv;
+  GList *sessions G_GNUC_UNUSED;
 
-  gst_rtsp_session_pool_filter (pool, remove_sessions_func, NULL);
+  sessions = gst_rtsp_session_pool_filter (pool, remove_sessions_func, NULL);
+  g_assert (sessions == NULL);
   g_hash_table_unref (priv->sessions);
   g_mutex_clear (&priv->lock);
 
@@ -539,8 +541,8 @@ gst_rtsp_session_pool_cleanup (GstRTSPSessionPool * pool)
 /**
  * gst_rtsp_session_pool_filter:
  * @pool: a #GstRTSPSessionPool
- * @func: (scope call) (allow-none): a callback
- * @user_data: (closure): user data passed to @func
+ * @func: (scope call) (allow-none) (closure user_data): a callback
+ * @user_data: user data passed to @func
  *
  * Call @func for each session in @pool. The result value of @func determines
  * what happens to the session. @func will be called with the session pool

@@ -22,6 +22,7 @@
 
 #include <gst/gst.h>
 #include "rtsp-media-factory.h"
+#include "rtsp-onvif-media.h"
 
 #define GST_TYPE_RTSP_ONVIF_MEDIA_FACTORY              (gst_rtsp_onvif_media_factory_get_type ())
 #define GST_IS_RTSP_ONVIF_MEDIA_FACTORY(obj)           (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GST_TYPE_RTSP_ONVIF_MEDIA_FACTORY))
@@ -46,8 +47,27 @@ struct GstRTSPOnvifMediaFactoryClass
   GstRTSPMediaFactoryClass parent;
   gboolean (*has_backchannel_support) (GstRTSPOnvifMediaFactory * factory);
 
+  /**
+   * GstRTSPOnvifMediaFactoryClass::create_backchannel_stream:
+   * @factory: a #GstRTSPOnvifMediaFactory
+   * @media: a #GstRTSPOnvifMedia
+   * @ctx: a #GstRTSPContext
+   *
+   * Called by the factory from #GstRTSPMediaFactoryClass::construct(). The default implementation
+   * creates the * #GstRTSPStream for the backchannel receiver by calling
+   * gst_rtsp_onvif_media_collect_backchannel (media). Implementations
+   * that want to create the backchannel later should return TRUE here
+   * and call gst_rtsp_onvif_media_collect_backchannel() later, but must
+   * do so before the media finishes preparing.
+   *
+   * Returns: TRUE on success. FALSE on a fatal error.
+   *
+   * Since: 1.26
+   */
+  gboolean (*create_backchannel_stream) (GstRTSPOnvifMediaFactory * factory, GstRTSPOnvifMedia *media, GstRTSPContext *ctx);
+
   /*< private >*/
-  gpointer _gst_reserved[GST_PADDING_LARGE];
+  gpointer _gst_reserved[GST_PADDING_LARGE-1];
 };
 
 struct GstRTSPOnvifMediaFactory
@@ -63,13 +83,13 @@ GST_RTSP_SERVER_API
 GType gst_rtsp_onvif_media_factory_get_type (void);
 
 GST_RTSP_SERVER_API
-GstRTSPMediaFactory *gst_rtsp_onvif_media_factory_new (void);
+GstRTSPMediaFactory *gst_rtsp_onvif_media_factory_new (void) G_GNUC_WARN_UNUSED_RESULT;
 
 GST_RTSP_SERVER_API
 void gst_rtsp_onvif_media_factory_set_backchannel_launch (GstRTSPOnvifMediaFactory *
     factory, const gchar * launch);
 GST_RTSP_SERVER_API
-gchar * gst_rtsp_onvif_media_factory_get_backchannel_launch (GstRTSPOnvifMediaFactory * factory);
+gchar * gst_rtsp_onvif_media_factory_get_backchannel_launch (GstRTSPOnvifMediaFactory * factory) G_GNUC_WARN_UNUSED_RESULT;
 
 GST_RTSP_SERVER_API
 gboolean gst_rtsp_onvif_media_factory_has_backchannel_support (GstRTSPOnvifMediaFactory * factory);

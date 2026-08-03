@@ -230,6 +230,14 @@ struct _GstRTSPStreamPrivate
   gulong block_early_rtcp_probe;
   GstPad *block_early_rtcp_pad_ipv6;
   gulong block_early_rtcp_probe_ipv6;
+
+  /* set to drop delta units in blocking pad */
+  gboolean drop_delta_units;
+
+  /* used to indicate that the drop probe has dropped a buffer and should be
+   * removed */
+  gboolean remove_drop_probe;
+
 };
 
 #define DEFAULT_CONTROL         NULL
@@ -357,6 +365,8 @@ gst_rtsp_stream_init (GstRTSPStream * stream)
   priv->block_early_rtcp_probe = 0;
   priv->block_early_rtcp_pad_ipv6 = NULL;
   priv->block_early_rtcp_probe_ipv6 = 0;
+  priv->drop_delta_units = FALSE;
+  priv->remove_drop_probe = FALSE;
 }
 
 typedef struct _UdpClientAddrInfo UdpClientAddrInfo;
@@ -1507,8 +1517,10 @@ again:
         || multicast) {
       GstRTSPAddressFlags flags;
 
-      if (addr)
+      if (addr) {
+        g_assert (*server_addr_out == NULL);
         rejected_addresses = g_list_prepend (rejected_addresses, addr);
+      }
 
       if (!pool)
         goto no_pool;
@@ -1558,9 +1570,15 @@ again:
   if (!g_socket_bind (rtp_socket, rtp_sockaddr, FALSE, NULL)) {
     GST_DEBUG_OBJECT (stream, "rtp bind() failed, will try again");
     g_object_unref (rtp_sockaddr);
-    if (transport_settings_defined)
+    if (transport_settings_defined) {
       goto transport_settings_error;
-    goto again;
+    } else if (*server_addr_out && ((pool
+                && gst_rtsp_address_pool_has_unicast_addresses (pool))
+            || multicast)) {
+      goto no_address;
+    } else {
+      goto again;
+    }
   }
   g_object_unref (rtp_sockaddr);
 
@@ -1604,7 +1622,7 @@ again:
   }
 
   if (!addr) {
-    addr = g_slice_new0 (GstRTSPAddress);
+    addr = g_new0 (GstRTSPAddress, 1);
     addr->port = tmp_rtp;
     addr->n_ports = 2;
     if (transport_settings_defined)
@@ -1985,7 +2003,7 @@ gst_rtsp_stream_get_server_port (GstRTSPStream * stream,
  *
  * Get the RTP session of this stream.
  *
- * Returns: (transfer full): The RTP session of this stream. Unref after usage.
+ * Returns: (transfer full) (nullable): The RTP session of this stream. Unref after usage.
  */
 GObject *
 gst_rtsp_stream_get_rtpsession (GstRTSPStream * stream)
@@ -2011,7 +2029,7 @@ gst_rtsp_stream_get_rtpsession (GstRTSPStream * stream)
  *
  * Get the SRTP encoder for this stream.
  *
- * Returns: (transfer full): The SRTP encoder for this stream. Unref after usage.
+ * Returns: (transfer full) (nullable): The SRTP encoder for this stream. Unref after usage.
  */
 GstElement *
 gst_rtsp_stream_get_srtp_encoder (GstRTSPStream * stream)
@@ -2634,18 +2652,22 @@ check_transport_backlog (GstRTSPStream * stream, GstRTSPStreamTransport * trans)
     GstBuffer *buffer;
     GstBufferList *buffer_list;
     gboolean is_rtp;
-    gboolean popped;
+    gboolean popped GST_UNUSED_ASSERT;
 
-    popped =
-        gst_rtsp_stream_transport_backlog_pop (trans, &buffer, &buffer_list,
-        &is_rtp);
+    is_rtp = gst_rtsp_stream_transport_backlog_peek_is_rtp (trans);
 
-    g_assert (popped == TRUE);
+    if (!gst_rtsp_stream_transport_check_back_pressure (trans, is_rtp)) {
+      popped =
+          gst_rtsp_stream_transport_backlog_pop (trans, &buffer, &buffer_list,
+          &is_rtp);
 
-    send_ret = push_data (stream, trans, buffer, buffer_list, is_rtp);
+      g_assert (popped == TRUE);
 
-    gst_clear_buffer (&buffer);
-    gst_clear_buffer_list (&buffer_list);
+      send_ret = push_data (stream, trans, buffer, buffer_list, is_rtp);
+
+      gst_clear_buffer (&buffer);
+      gst_clear_buffer_list (&buffer_list);
+    }
   }
 
   gst_rtsp_stream_transport_unlock_backlog (trans);
@@ -2667,7 +2689,6 @@ send_tcp_message (GstRTSPStream * stream, gint idx)
   GstSample *sample;
   GstBuffer *buffer;
   GstBufferList *buffer_list;
-  guint n_messages = 0;
   gboolean is_rtp;
   GPtrArray *transports;
 
@@ -2699,10 +2720,6 @@ send_tcp_message (GstRTSPStream * stream, gint idx)
 
   /* We will get one message-sent notification per buffer or
    * complete buffer-list. We handle each buffer-list as a unit */
-  if (buffer)
-    n_messages += 1;
-  if (buffer_list)
-    n_messages += 1;
 
   transports = priv->tr_cache;
   if (transports)
@@ -2810,13 +2827,14 @@ handle_new_sample (GstAppSink * sink, gpointer user_data)
     }
   }
 
+  g_mutex_unlock (&priv->lock);
+
+  g_mutex_lock (&priv->send_lock);
+
   if (priv->send_thread == NULL) {
     priv->send_thread = g_thread_new (NULL, (GThreadFunc) send_func, user_data);
   }
 
-  g_mutex_unlock (&priv->lock);
-
-  g_mutex_lock (&priv->send_lock);
   priv->send_cookie++;
   g_cond_signal (&priv->send_cond);
   g_mutex_unlock (&priv->send_lock);
@@ -3315,6 +3333,7 @@ create_and_plug_queue_to_linked_stream_probe_cb (GstPad * inpad,
   GstPad *tee_pad;
   GstPad *queue_pad;
   guint index;
+  gboolean unlinked GST_UNUSED_ASSERT;
 
   stream = data->stream;
   priv = stream->priv;
@@ -3330,7 +3349,8 @@ create_and_plug_queue_to_linked_stream_probe_cb (GstPad * inpad,
    * sink   src->sink       |
    *   '-----'    '---------'
    */
-  g_assert (gst_pad_unlink (tee_pad, sink_pad));
+  unlinked = gst_pad_unlink (tee_pad, sink_pad);
+  g_assert (unlinked);
 
   /* add queue to the already existing stream */
   *queue1 = gst_element_factory_make ("queue", NULL);
@@ -4102,6 +4122,7 @@ gst_rtsp_stream_leave_bin (GstRTSPStream * stream, GstBin * bin,
 {
   GstRTSPStreamPrivate *priv;
   gint i;
+  GThread *send_thread;
 
   g_return_val_if_fail (GST_IS_RTSP_STREAM (stream), FALSE);
   g_return_val_if_fail (GST_IS_BIN (bin), FALSE);
@@ -4112,11 +4133,12 @@ gst_rtsp_stream_leave_bin (GstRTSPStream * stream, GstBin * bin,
   g_mutex_lock (&priv->send_lock);
   priv->continue_sending = FALSE;
   priv->send_cookie++;
+  send_thread = g_steal_pointer (&priv->send_thread);
   g_cond_signal (&priv->send_cond);
   g_mutex_unlock (&priv->send_lock);
 
-  if (priv->send_thread) {
-    g_thread_join (priv->send_thread);
+  if (send_thread) {
+    g_thread_join (send_thread);
   }
 
   g_mutex_lock (&priv->lock);
@@ -4218,6 +4240,13 @@ gst_rtsp_stream_leave_bin (GstRTSPStream * stream, GstBin * bin,
     gst_rtsp_address_free (priv->server_addr_v6);
   priv->server_addr_v6 = NULL;
 
+  for (i = 0; i < 2; i++) {
+    g_clear_object (&priv->socket_v4[i]);
+    g_clear_object (&priv->socket_v6[i]);
+    g_clear_object (&priv->mcast_socket_v4[i]);
+    g_clear_object (&priv->mcast_socket_v6[i]);
+  }
+
   g_mutex_unlock (&priv->lock);
 
   return TRUE;
@@ -4310,7 +4339,7 @@ gst_rtsp_stream_get_rtpinfo (GstRTSPStream * stream,
     else
       g_object_get (priv->appsink[0], "last-sample", &last_sample, NULL);
 
-    if (last_sample) {
+    if (last_sample && !priv->blocking) {
       GstCaps *caps;
       GstBuffer *buffer;
       GstSegment *segment;
@@ -4366,6 +4395,8 @@ gst_rtsp_stream_get_rtpinfo (GstRTSPStream * stream,
         gst_sample_unref (last_sample);
       }
     } else if (priv->blocking) {
+      if (last_sample != NULL)
+        gst_sample_unref (last_sample);
       if (seq) {
         if (!priv->blocked_buffer)
           goto stats;
@@ -5207,8 +5238,8 @@ gst_rtsp_stream_get_current_seqnum (GstRTSPStream * stream)
 /**
  * gst_rtsp_stream_transport_filter:
  * @stream: a #GstRTSPStream
- * @func: (scope call) (allow-none): a callback
- * @user_data: (closure): user data passed to @func
+ * @func: (scope call) (allow-none) (closure user_data): a callback
+ * @user_data: user data passed to @func
  *
  * Call @func for each transport managed by @stream. The result value of @func
  * determines what happens to the transport. @func will be called with @stream
@@ -5295,7 +5326,7 @@ restart:
 }
 
 static GstPadProbeReturn
-pad_blocking (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
+rtp_pad_blocking (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
 {
   GstRTSPStreamPrivate *priv;
   GstRTSPStream *stream;
@@ -5319,6 +5350,14 @@ pad_blocking (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
       gst_rtp_buffer_unmap (&rtp);
     }
     priv->position = GST_BUFFER_TIMESTAMP (buffer);
+    if (priv->drop_delta_units) {
+      if (GST_BUFFER_FLAG_IS_SET (buffer, GST_BUFFER_FLAG_DELTA_UNIT)) {
+        g_assert (!priv->blocking);
+        GST_DEBUG_OBJECT (pad, "dropping delta-unit buffer");
+        ret = GST_PAD_PROBE_DROP;
+        goto done;
+      }
+    }
   } else if ((info->type & GST_PAD_PROBE_TYPE_BUFFER_LIST)) {
     GstRTPBuffer rtp = GST_RTP_BUFFER_INIT;
 
@@ -5331,12 +5370,20 @@ pad_blocking (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
       gst_rtp_buffer_unmap (&rtp);
     }
     priv->position = GST_BUFFER_TIMESTAMP (buffer);
+    if (priv->drop_delta_units) {
+      if (GST_BUFFER_FLAG_IS_SET (buffer, GST_BUFFER_FLAG_DELTA_UNIT)) {
+        g_assert (!priv->blocking);
+        GST_DEBUG_OBJECT (pad, "dropping delta-unit buffer");
+        ret = GST_PAD_PROBE_DROP;
+        goto done;
+      }
+    }
   } else if ((info->type & GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM)) {
     if (GST_EVENT_TYPE (info->data) == GST_EVENT_GAP) {
       gst_event_parse_gap (info->data, &priv->position, NULL);
     } else {
       ret = GST_PAD_PROBE_PASS;
-      g_mutex_unlock (&priv->lock);
+      GST_WARNING ("Passing event.");
       goto done;
     }
   } else {
@@ -5364,6 +5411,11 @@ pad_blocking (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
     gst_event_unref (event);
   }
 
+  /* make sure to block on the correct frame type */
+  if (priv->drop_delta_units) {
+    g_assert (!GST_BUFFER_FLAG_IS_SET (buffer, GST_BUFFER_FLAG_DELTA_UNIT));
+  }
+
   priv->blocking = TRUE;
 
   GST_DEBUG_OBJECT (pad, "Now blocking");
@@ -5371,15 +5423,100 @@ pad_blocking (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
   GST_DEBUG_OBJECT (stream, "position: %" GST_TIME_FORMAT,
       GST_TIME_ARGS (priv->position));
 
-  g_mutex_unlock (&priv->lock);
-
   gst_element_post_message (priv->payloader,
       gst_message_new_element (GST_OBJECT_CAST (priv->payloader),
           gst_structure_new ("GstRTSPStreamBlocking", "is_complete",
               G_TYPE_BOOLEAN, priv->is_complete, NULL)));
+done:
+  g_mutex_unlock (&priv->lock);
+  return ret;
+}
+
+/* this probe will drop a single buffer. It is used when an old buffer is
+ * blocking the pipeline, such as between a DESCRIBE and a PLAY request. */
+static GstPadProbeReturn
+drop_probe (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
+{
+  GstRTSPStreamPrivate *priv;
+  GstRTSPStream *stream;
+  /* drop an old buffer stuck in a blocked pipeline */
+  GstPadProbeReturn ret = GST_PAD_PROBE_DROP;
+
+  stream = user_data;
+  priv = stream->priv;
+
+  g_mutex_lock (&priv->lock);
+
+  if ((info->type & GST_PAD_PROBE_TYPE_BUFFER ||
+          info->type & GST_PAD_PROBE_TYPE_BUFFER_LIST)) {
+    /* if a buffer has been dropped then remove this probe */
+    if (priv->remove_drop_probe) {
+      priv->remove_drop_probe = FALSE;
+      ret = GST_PAD_PROBE_REMOVE;
+    } else {
+      priv->blocking = FALSE;
+      priv->remove_drop_probe = TRUE;
+    }
+  } else {
+    ret = GST_PAD_PROBE_PASS;
+  }
+  g_mutex_unlock (&priv->lock);
+  return ret;
+}
+
+static GstPadProbeReturn
+rtcp_pad_blocking (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
+{
+  GstRTSPStreamPrivate *priv;
+  GstRTSPStream *stream;
+  GstPadProbeReturn ret = GST_PAD_PROBE_OK;
+
+  stream = user_data;
+  priv = stream->priv;
+
+  g_mutex_lock (&priv->lock);
+
+  if ((info->type & GST_PAD_PROBE_TYPE_BUFFER) ||
+      (info->type & GST_PAD_PROBE_TYPE_BUFFER_LIST)) {
+    GST_DEBUG_OBJECT (pad, "Now blocking on buffer");
+  } else if ((info->type & GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM)) {
+    if (GST_EVENT_TYPE (info->data) == GST_EVENT_GAP) {
+      GST_DEBUG_OBJECT (pad, "Now blocking on gap event");
+      ret = GST_PAD_PROBE_OK;
+    } else {
+      ret = GST_PAD_PROBE_PASS;
+      g_mutex_unlock (&priv->lock);
+      goto done;
+    }
+  } else {
+    g_assert_not_reached ();
+  }
+
+  g_mutex_unlock (&priv->lock);
 
 done:
   return ret;
+}
+
+static void
+install_drop_probe (GstRTSPStream * stream)
+{
+  GstRTSPStreamPrivate *priv;
+
+  priv = stream->priv;
+
+  /* if receiver */
+  if (priv->sinkpad)
+    return;
+
+  /* install for data channel only */
+  if (priv->send_src[0]) {
+    gst_pad_add_probe (priv->send_src[0],
+        GST_PAD_PROBE_TYPE_BLOCK | GST_PAD_PROBE_TYPE_BUFFER |
+        GST_PAD_PROBE_TYPE_BUFFER_LIST |
+        GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, drop_probe,
+        g_object_ref (stream), g_object_unref);
+  }
 }
 
 static void
@@ -5406,11 +5543,20 @@ set_blocked (GstRTSPStream * stream, gboolean blocked)
         priv->blocked_buffer = FALSE;
         priv->blocked_running_time = GST_CLOCK_TIME_NONE;
         priv->blocked_clock_rate = 0;
-        priv->blocked_id[i] = gst_pad_add_probe (priv->send_src[i],
-            GST_PAD_PROBE_TYPE_BLOCK | GST_PAD_PROBE_TYPE_BUFFER |
-            GST_PAD_PROBE_TYPE_BUFFER_LIST |
-            GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, pad_blocking,
-            g_object_ref (stream), g_object_unref);
+
+        if (i == 0) {
+          priv->blocked_id[i] = gst_pad_add_probe (priv->send_src[i],
+              GST_PAD_PROBE_TYPE_BLOCK | GST_PAD_PROBE_TYPE_BUFFER |
+              GST_PAD_PROBE_TYPE_BUFFER_LIST |
+              GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, rtp_pad_blocking,
+              g_object_ref (stream), g_object_unref);
+        } else {
+          priv->blocked_id[i] = gst_pad_add_probe (priv->send_src[i],
+              GST_PAD_PROBE_TYPE_BLOCK | GST_PAD_PROBE_TYPE_BUFFER |
+              GST_PAD_PROBE_TYPE_BUFFER_LIST |
+              GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, rtcp_pad_blocking,
+              g_object_ref (stream), g_object_unref);
+        }
       }
     }
   } else {
@@ -5443,6 +5589,34 @@ gst_rtsp_stream_set_blocked (GstRTSPStream * stream, gboolean blocked)
   priv = stream->priv;
   g_mutex_lock (&priv->lock);
   set_blocked (stream, blocked);
+  g_mutex_unlock (&priv->lock);
+
+  return TRUE;
+}
+
+/**
+ * gst_rtsp_stream_install_drop_probe:
+ * @stream: a #GstRTSPStream
+ *
+ * This probe can be installed when the currently blocking buffer should be
+ * dropped. When it has successfully dropped the buffer, it will remove itself.
+ * The goal is to avoid sending old data, typically when there has been a delay
+ * between a DESCRIBE and a PLAY request.
+ *
+ * Returns: %TRUE on success
+ *
+ * Since: 1.24
+ */
+gboolean
+gst_rtsp_stream_install_drop_probe (GstRTSPStream * stream)
+{
+  GstRTSPStreamPrivate *priv;
+
+  g_return_val_if_fail (GST_IS_RTSP_STREAM (stream), FALSE);
+
+  priv = stream->priv;
+  g_mutex_lock (&priv->lock);
+  install_drop_probe (stream);
   g_mutex_unlock (&priv->lock);
 
   return TRUE;
@@ -5545,7 +5719,7 @@ gst_rtsp_stream_query_position (GstRTSPStream * stream, gint64 * position)
     pad = gst_object_ref (priv->send_src[0]);
   } else {
     g_mutex_unlock (&priv->lock);
-    GST_WARNING_OBJECT (stream, "Couldn't obtain postion: erroneous pipeline");
+    GST_WARNING_OBJECT (stream, "Couldn't obtain position: erroneous pipeline");
     return FALSE;
   }
   g_mutex_unlock (&priv->lock);
@@ -5553,7 +5727,7 @@ gst_rtsp_stream_query_position (GstRTSPStream * stream, gint64 * position)
   if (sink) {
     if (!gst_element_query_position (sink, GST_FORMAT_TIME, position)) {
       GST_WARNING_OBJECT (stream,
-          "Couldn't obtain postion: position query failed");
+          "Couldn't obtain position: position query failed");
       gst_object_unref (sink);
       return FALSE;
     }
@@ -5564,7 +5738,7 @@ gst_rtsp_stream_query_position (GstRTSPStream * stream, gint64 * position)
 
     event = gst_pad_get_sticky_event (pad, GST_EVENT_SEGMENT, 0);
     if (!event) {
-      GST_WARNING_OBJECT (stream, "Couldn't obtain postion: no segment event");
+      GST_WARNING_OBJECT (stream, "Couldn't obtain position: no segment event");
       gst_object_unref (pad);
       return FALSE;
     }
@@ -5740,7 +5914,7 @@ beach:
  * Add a receiver and sender part to the pipeline based on the transport from
  * SETUP.
  *
- * Returns: %TRUE if the stream has been sucessfully updated.
+ * Returns: %TRUE if the stream has been successfully updated.
  *
  * Since: 1.14
  */
@@ -5772,7 +5946,7 @@ gst_rtsp_stream_complete_stream (GstRTSPStream * stream,
   priv->is_complete = TRUE;
   g_mutex_unlock (&priv->lock);
 
-  GST_DEBUG_OBJECT (stream, "pipeline sucsessfully updated");
+  GST_DEBUG_OBJECT (stream, "pipeline successfully updated");
   return TRUE;
 
 create_receiver_error:
@@ -6362,5 +6536,27 @@ gst_rtsp_stream_unblock_rtcp (GstRTSPStream * stream)
     gst_object_unref (priv->block_early_rtcp_pad_ipv6);
     priv->block_early_rtcp_pad_ipv6 = NULL;
   }
+  g_mutex_unlock (&priv->lock);
+}
+
+/**
+ * gst_rtsp_stream_set_drop_delta_units:
+ * @stream: a #GstRTSPStream
+ * @drop: TRUE if delta unit frames are supposed to be dropped.
+ *
+ * Decide whether the blocking probe is supposed to drop delta units at the
+ * beginning of a stream.
+ *
+ * Since: 1.24
+ */
+void
+gst_rtsp_stream_set_drop_delta_units (GstRTSPStream * stream, gboolean drop)
+{
+  GstRTSPStreamPrivate *priv;
+
+  g_return_if_fail (GST_IS_RTSP_STREAM (stream));
+  priv = stream->priv;
+  g_mutex_lock (&priv->lock);
+  priv->drop_delta_units = drop;
   g_mutex_unlock (&priv->lock);
 }
